@@ -1,0 +1,9 @@
+name: speckit
+phases:
+  - constitution
+  - specify
+  - plan
+  - tasks
+  - implement
+  - validate
+  - deploy

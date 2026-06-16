@@ -1,0 +1,17 @@
+{
+  "name": "@inova/config",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/ports.ts",
+  "types": "./src/ports.ts",
+  "exports": {
+    ".": "./src/ports.ts",
+    "./ports.json": "./ports.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.7.2"
+  }
+}

@@ -1,0 +1,57 @@
+openapi: 3.1.0
+info:
+  title: Inova Finance AI — Core API
+  version: 0.1.0
+paths:
+  /auth/login:
+    post:
+      summary: Login with optional MFA
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                totp: { type: string }
+      responses:
+        '200':
+          description: JWT token
+  /auth/mfa/setup:
+    post:
+      summary: Begin MFA setup
+      responses:
+        '200':
+          description: TOTP secret and URI
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+components:
+  parameters:
+    TenantId:
+      name: X-Tenant-Id
+      in: header
+      required: true
+      schema: { type: string }
+    BranchId:
+      name: X-Branch-Id
+      in: header
+      schema: { type: string }
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: X-Idempotency-Key
+      in: header
+      schema: { type: string }

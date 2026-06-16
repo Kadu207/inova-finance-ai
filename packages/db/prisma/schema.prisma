@@ -1,0 +1,293 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branches      Branch[]
+  userTenants   UserTenant[]
+  payables      Payable[]
+  receivables   Receivable[]
+  bankAccounts  BankAccount[]
+  auditLogs     AuditLog[]
+  outboxEvents  OutboxEvent[]
+  chatwootLinks ChatwootLink[]
+  ocrJobs       OcrJob[]
+
+  @@index([slug])
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  code      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payables    Payable[]
+  receivables Receivable[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  mfaSecret    String?
+  mfaEnabled   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenants  UserTenant[]
+  sessions Session[]
+  auditLogs AuditLog[] @relation("AuditActor")
+}
+
+model UserTenant {
+  id        String   @id @default(cuid())
+  userId    String
+  tenantId  String
+  role      String
+  branchIds String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  actorId   String?
+  action    String
+  resource  String
+  payload   Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor  User?  @relation("AuditActor", fields: [actorId], references: [id])
+
+  @@index([tenantId, createdAt])
+}
+
+enum PayableStatus {
+  open
+  paid
+  cancelled
+}
+
+enum ReceivableStatus {
+  open
+  paid
+  cancelled
+}
+
+model Payable {
+  id             String        @id @default(cuid())
+  tenantId       String
+  branchId       String
+  supplierName   String
+  amount         Decimal       @db.Decimal(18, 2)
+  dueDate        DateTime
+  status         PayableStatus @default(open)
+  idempotencyKey String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, status])
+  @@index([tenantId, dueDate])
+}
+
+model Receivable {
+  id             String           @id @default(cuid())
+  tenantId       String
+  branchId       String
+  customerName   String
+  amount         Decimal          @db.Decimal(18, 2)
+  dueDate        DateTime
+  status         ReceivableStatus @default(open)
+  idempotencyKey String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, status])
+  @@index([tenantId, dueDate])
+}
+
+model BankAccount {
+  id        String   @id @default(cuid())
+  tenantId  String
+  branchId  String?
+  name      String
+  bankCode  String
+  agency    String
+  account   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cashMovements CashMovement[]
+
+  @@index([tenantId])
+}
+
+enum CashMovementType {
+  inflow
+  outflow
+}
+
+model CashMovement {
+  id            String           @id @default(cuid())
+  tenantId      String
+  bankAccountId String
+  type          CashMovementType
+  amount        Decimal          @db.Decimal(18, 2)
+  pixKey        String?
+  reference     String?
+  createdAt     DateTime         @default(now())
+
+  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+}
+
+model FinanceAgendaItem {
+  id               String   @id @default(cuid())
+  tenantId         String
+  branchId         String?
+  title            String
+  dueDate          DateTime
+  type             String
+  linkedResourceId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([tenantId, dueDate])
+}
+
+enum OutboxStatus {
+  pending
+  published
+  failed
+}
+
+model OutboxEvent {
+  id             String       @id @default(cuid())
+  tenantId       String
+  eventType      String
+  payload        Json
+  status         OutboxStatus @default(pending)
+  idempotencyKey String
+  correlationId  String
+  createdAt      DateTime     @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, status])
+}
+
+model InboxEvent {
+  id             String    @id @default(cuid())
+  tenantId       String
+  source         String
+  payload        Json
+  idempotencyKey String
+  processedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, processedAt])
+}
+
+model ChatwootLink {
+  id             String   @id @default(cuid())
+  tenantId       String
+  conversationId String
+  sourceId       String
+  customerId     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, conversationId])
+  @@index([tenantId, sourceId])
+}
+
+model N8nWorkflow {
+  id           String   @id @default(cuid())
+  tenantId     String
+  workflowId   String
+  triggerEvent String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, workflowId])
+  @@index([tenantId, triggerEvent])
+}
+
+enum OcrJobStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+model OcrJob {
+  id           String       @id @default(cuid())
+  tenantId     String
+  documentType String
+  minioKey     String
+  status       OcrJobStatus @default(pending)
+  confidence   Float?
+  result       Json?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+}

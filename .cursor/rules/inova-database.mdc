@@ -1,0 +1,13 @@
+---
+description: Prisma and database conventions for Inova Finance AI
+globs: "**/*.prisma, packages/db/**"
+alwaysApply: false
+---
+
+# Database Conventions
+
+- All tenant-scoped tables include `tenantId` with `@@index([tenantId])`
+- Use `@id @default(cuid())` for string IDs
+- Include `createdAt` and `updatedAt` on all models
+- RLS policies enforced at application layer + PostgreSQL RLS where deployed
+- Financial tables require audit trail via `AuditLog` model

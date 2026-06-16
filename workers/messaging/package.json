@@ -1,0 +1,22 @@
+{
+  "name": "@inova/messaging",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev --port 8811",
+    "build": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@inova/events": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260615.1",
+    "typescript": "5.7.2",
+    "vitest": "2.1.8",
+    "wrangler": "4.100.0"
+  }
+}

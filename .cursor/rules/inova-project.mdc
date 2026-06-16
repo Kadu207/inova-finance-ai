@@ -1,0 +1,34 @@
+---
+description: Inova Finance AI project conventions for all agents
+alwaysApply: true
+---
+
+# Inova Finance AI — Project Rules
+
+## Stack
+
+- Monorepo Turborepo + pnpm workspaces
+- Next.js 15 App Router (`apps/web`)
+- Cloudflare Workers (`workers/app-api`, `workers/messaging`, `workers/agents-runtime`, `workers/embedded-runtime`)
+- Prisma + PostgreSQL via Hyperdrive (`packages/db`)
+- FastAPI VPS services (`services/ocr`, `services/fiscal`, `services/reporting`)
+
+## Mandatory Headers
+
+Every API request and event MUST include:
+
+- `X-Tenant-Id`
+- `X-Branch-Id` (when applicable)
+- `X-Correlation-Id`
+
+## Spec Kit
+
+Follow SDD workflow in `.specify/`. Read constitution before implementing features.
+
+## Frontend Checkpoint
+
+Do NOT implement visual layout beyond technical shell until `LAYOUT-APPROVAL-REQUIRED` checkpoint is cleared with the user.
+
+## Language
+
+User-facing strings and specs in pt-BR. Code identifiers in English.

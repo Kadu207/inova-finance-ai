@@ -1,0 +1,24 @@
+{
+  "name": "inova-finance-ai",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:contract": "turbo run test:contract",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @inova/db generate",
+    "db:migrate": "pnpm --filter @inova/db migrate",
+    "db:push": "pnpm --filter @inova/db push"
+  },
+  "devDependencies": {
+    "turbo": "2.3.3",
+    "typescript": "5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

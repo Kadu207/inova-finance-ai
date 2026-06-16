@@ -1,0 +1,19 @@
+{
+  "$comment": "Portas dedicadas Inova Finance AI (prefixo INA). Não reutilizar em outros projetos.",
+  "web": 3100,
+  "chatwoot": 3101,
+  "postgres": 5442,
+  "redis": 6381,
+  "n8n": 5680,
+  "qdrant": 6340,
+  "minioApi": 9010,
+  "minioConsole": 9011,
+  "appApi": 8810,
+  "messaging": 8811,
+  "agentsRuntime": 8812,
+  "embeddedRuntime": 8813,
+  "bridgesApi": 8814,
+  "ocrApi": 8815,
+  "fiscalApi": 8816,
+  "reportingApi": 8817
+}

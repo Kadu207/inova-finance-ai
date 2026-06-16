@@ -1,0 +1,74 @@
+openapi: 3.1.0
+info:
+  title: Inova Finance AI — Finance API
+  version: 0.1.0
+paths:
+  /api/finance/payables:
+    get:
+      summary: List payables
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Payables list
+    post:
+      summary: Create payable
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayableInput'
+      responses:
+        '201':
+          description: Created
+  /api/finance/receivables:
+    get:
+      summary: List receivables
+      responses:
+        '200':
+          description: Receivables list
+    post:
+      summary: Create receivable
+      responses:
+        '201':
+          description: Created
+  /api/finance/cash-flow:
+    get:
+      summary: Cash flow summary
+      responses:
+        '200':
+          description: Inflow/outflow/net
+  /api/finance/agenda:
+    get:
+      summary: Finance agenda
+      responses:
+        '200':
+          description: Due items calendar
+components:
+  parameters:
+    TenantId:
+      name: X-Tenant-Id
+      in: header
+      required: true
+      schema: { type: string }
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: X-Idempotency-Key
+      in: header
+      schema: { type: string }
+  schemas:
+    PayableInput:
+      type: object
+      required: [supplierName, amount, dueDate, branchId]
+      properties:
+        supplierName: { type: string }
+        amount: { type: string }
+        dueDate: { type: string, format: date }
+        branchId: { type: string }

@@ -1,0 +1,17 @@
+/* Design tokens — shell técnico. Layout visual aguarda LAYOUT-APPROVAL-REQUIRED */
+@import "@inova/ui/tokens.css";
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  background: var(--color-bg, #f8fafc);
+  color: var(--color-text, #0f172a);
+}

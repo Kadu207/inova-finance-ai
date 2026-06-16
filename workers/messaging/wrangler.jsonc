@@ -1,0 +1,32 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "inova-messaging",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": {
+    "ENVIRONMENT": "development",
+    "VPS_WEBHOOK_URL": "http://localhost:8814/vps/events"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "OUTBOX", "class_name": "OutboxDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_classes": ["OutboxDO"] }],
+  "queues": {
+    "producers": [{ "binding": "OUTBOUND_QUEUE", "queue": "inova-outbound" }],
+    "consumers": [
+      {
+        "queue": "inova-events",
+        "max_batch_size": 10,
+        "max_retries": 3,
+        "dead_letter_queue": "inova-dlq"
+      }
+    ]
+  },
+  "services": [{ "binding": "APP_API", "service": "inova-app-api" }],
+  "env": {
+    "staging": { "name": "inova-messaging-staging", "vars": { "ENVIRONMENT": "staging" } },
+    "production": { "name": "inova-messaging", "vars": { "ENVIRONMENT": "production" } }
+  }
+}

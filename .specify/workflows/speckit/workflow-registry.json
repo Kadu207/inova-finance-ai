@@ -1,0 +1,8 @@
+{
+  "workflows": {
+    "speckit": {
+      "path": ".specify/workflows/speckit/workflow.yml",
+      "phases": ["constitution", "specify", "plan", "tasks", "implement", "validate", "deploy"]
+    }
+  }
+}

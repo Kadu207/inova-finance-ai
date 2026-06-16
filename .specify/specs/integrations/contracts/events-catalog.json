@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Inova Event Catalog",
+  "definitions": {
+    "BaseEvent": {
+      "type": "object",
+      "required": ["eventType", "tenantId", "correlationId", "idempotencyKey", "timestamp", "payload"],
+      "properties": {
+        "eventType": { "type": "string" },
+        "tenantId": { "type": "string", "minLength": 1 },
+        "correlationId": { "type": "string", "minLength": 1 },
+        "idempotencyKey": { "type": "string", "minLength": 1 },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "payload": { "type": "object" }
+      }
+    }
+  },
+  "events": [
+    "PayableCreated",
+    "ReceivableCreated",
+    "CustomerMessageReceived",
+    "OcrJobCompleted",
+    "FinanceDueReminder"
+  ]
+}

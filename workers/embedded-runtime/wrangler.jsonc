@@ -1,0 +1,29 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "inova-embedded",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": {
+    "ENVIRONMENT": "development",
+    "VPS_HEALTH_URL": "http://localhost:8814/health",
+    "N8N_HEALTH_URL": "http://localhost:5680/healthz",
+    "CHATWOOT_HEALTH_URL": "http://localhost:3101/api"
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *", "0 * * * *", "0 6 * * *", "* * * * *"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "MONITOR", "class_name": "MonitorDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_classes": ["MonitorDO"] }],
+  "services": [
+    { "binding": "APP_API", "service": "inova-app-api" },
+    { "binding": "MESSAGING", "service": "inova-messaging" }
+  ],
+  "env": {
+    "staging": { "name": "inova-embedded-staging" },
+    "production": { "name": "inova-embedded" }
+  }
+}
