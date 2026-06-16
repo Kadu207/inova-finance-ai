@@ -1,16 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { getClientSession } from "@/lib/auth.client";
+import { createPayable } from "@/lib/finance-api";
 
 type PayableFormDrawerProps = {
   open: boolean;
   onClose: () => void;
+  onCreated?: () => void;
 };
 
 const PAYMENT_METHODS = ["PIX", "Boleto", "Transferência"] as const;
 
-export function PayableFormDrawer({ open, onClose }: PayableFormDrawerProps) {
+export function PayableFormDrawer({ open, onClose, onCreated }: PayableFormDrawerProps) {
   const [step, setStep] = useState<1 | 2>(1);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [form, setForm] = useState({
     vendor: "",
     cnpj: "",
@@ -30,12 +35,33 @@ export function PayableFormDrawer({ open, onClose }: PayableFormDrawerProps) {
 
   function handleClose() {
     setStep(1);
+    setSubmitError(null);
     onClose();
   }
 
-  function handleSubmit() {
-    alert("Lançamento AP salvo (MVP — integração API na próxima sprint).");
-    handleClose();
+  async function handleSubmit() {
+    const token = getClientSession();
+    if (!token) {
+      setSubmitError("Sessão expirada. Faça login novamente.");
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const supplierName = form.description ? `${form.vendor} — ${form.description}` : form.vendor;
+      await createPayable(token, {
+        supplierName,
+        amount: form.amount,
+        dueDate: form.dueDate,
+        branchId: "branch_main",
+      });
+      onCreated?.();
+      handleClose();
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "Erro ao salvar lançamento");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -52,6 +78,11 @@ export function PayableFormDrawer({ open, onClose }: PayableFormDrawerProps) {
         </div>
 
         <div className="ina-drawer__body">
+          {submitError && (
+            <p className="ina-badge ina-badge--danger" style={{ marginBottom: "1rem" }}>
+              {submitError}
+            </p>
+          )}
           <div className="ina-steps">
             <div className={`ina-step${step >= 1 ? " ina-step--active" : ""}${step > 1 ? " ina-step--done" : ""}`} />
             <div className={`ina-step${step >= 2 ? " ina-step--active" : ""}`} />
@@ -118,7 +149,7 @@ export function PayableFormDrawer({ open, onClose }: PayableFormDrawerProps) {
 
         <div className="ina-drawer__footer">
           {step === 2 && (
-            <button type="button" className="ina-btn ina-btn--ghost" onClick={() => setStep(1)}>
+            <button type="button" className="ina-btn ina-btn--ghost" onClick={() => setStep(1)} disabled={submitting}>
               Voltar
             </button>
           )}
@@ -132,8 +163,8 @@ export function PayableFormDrawer({ open, onClose }: PayableFormDrawerProps) {
               Continuar
             </button>
           ) : (
-            <button type="button" className="ina-btn ina-btn--primary" onClick={handleSubmit}>
-              Confirmar lançamento
+            <button type="button" className="ina-btn ina-btn--primary" onClick={() => void handleSubmit()} disabled={submitting}>
+              {submitting ? "Salvando..." : "Confirmar lançamento"}
             </button>
           )}
         </div>

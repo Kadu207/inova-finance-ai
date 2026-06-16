@@ -29,7 +29,7 @@ export function setApiContext(ctx: Partial<ApiContext>) {
   defaultContext = { ...defaultContext, ...ctx };
 }
 
-async function request<T>(method: string, path: string, body?: unknown, ctx?: ApiContext): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, ctx?: Partial<ApiContext>): Promise<T> {
   const headers = buildHeaders({ ...defaultContext, ...ctx });
   let res: Response;
   try {
@@ -55,6 +55,6 @@ async function request<T>(method: string, path: string, body?: unknown, ctx?: Ap
 }
 
 export const apiClient = {
-  get: <T>(path: string, ctx?: ApiContext) => request<T>("GET", path, undefined, ctx),
-  post: <T>(path: string, body: unknown, ctx?: ApiContext) => request<T>("POST", path, body, ctx),
+  get: <T>(path: string, ctx?: Partial<ApiContext>) => request<T>("GET", path, undefined, ctx),
+  post: <T>(path: string, body: unknown, ctx?: Partial<ApiContext>) => request<T>("POST", path, body, ctx),
 };

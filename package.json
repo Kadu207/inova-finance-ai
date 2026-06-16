@@ -9,6 +9,7 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "test:contract": "turbo run test:contract",
+    "test:e2e": "playwright test",
     "typecheck": "turbo run typecheck",
     "db:generate": "pnpm --filter @inova/db generate",
     "db:migrate": "pnpm --filter @inova/db migrate",
@@ -19,6 +20,7 @@
     "dev:local:restart": "bash scripts/dev-local.sh restart"
   },
   "devDependencies": {
+    "@playwright/test": "1.49.1",
     "turbo": "2.3.3",
     "typescript": "5.7.2"
   },

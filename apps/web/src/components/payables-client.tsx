@@ -1,10 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DataTable } from "@inova/ui";
 import { PayableFormDrawer } from "./payable-form-drawer";
+import { getClientSession } from "@/lib/auth.client";
+import {
+  fetchPayables,
+  formatBRL,
+  formatDateBR,
+  payableStatusUi,
+  type ApiPayable,
+} from "@/lib/finance-api";
 
-type Payable = {
+type PayableRow = {
   id: string;
   vendor: string;
   dueDate: string;
@@ -12,14 +20,7 @@ type Payable = {
   status: "open" | "paid" | "overdue";
 };
 
-const INITIAL: Payable[] = [
-  { id: "1", vendor: "Fornecedor Alpha Ltda", dueDate: "18/06/2026", amount: "R$ 12.450,00", status: "open" },
-  { id: "2", vendor: "Cloud Services BR", dueDate: "12/06/2026", amount: "R$ 3.890,00", status: "overdue" },
-  { id: "3", vendor: "Logística Express", dueDate: "25/06/2026", amount: "R$ 8.200,00", status: "open" },
-  { id: "4", vendor: "Consultoria Fiscal", dueDate: "05/06/2026", amount: "R$ 6.500,00", status: "paid" },
-];
-
-function StatusBadge({ status }: { status: Payable["status"] }) {
+function StatusBadge({ status }: { status: PayableRow["status"] }) {
   const map = {
     open: { label: "Em aberto", className: "ina-badge--warning" },
     paid: { label: "Pago", className: "ina-badge--success" },
@@ -29,8 +30,43 @@ function StatusBadge({ status }: { status: Payable["status"] }) {
   return <span className={`ina-badge ${s.className}`}>{s.label}</span>;
 }
 
+function toRow(p: ApiPayable): PayableRow {
+  return {
+    id: p.id,
+    vendor: p.supplierName,
+    dueDate: formatDateBR(p.dueDate),
+    amount: formatBRL(p.amount),
+    status: payableStatusUi(p.status, p.dueDate),
+  };
+}
+
 export function PayablesClient() {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [rows, setRows] = useState<PayableRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const token = getClientSession();
+    if (!token) {
+      setError("Sessão expirada. Faça login novamente.");
+      setLoading(false);
+      return;
+    }
+    try {
+      setError(null);
+      const data = await fetchPayables(token);
+      setRows(data.map(toRow));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao carregar contas a pagar");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   return (
     <>
@@ -40,17 +76,34 @@ export function PayablesClient() {
         </button>
       </div>
 
-      <DataTable
-        columns={[
-          { key: "vendor", header: "Fornecedor", render: (r) => r.vendor },
-          { key: "due", header: "Vencimento", render: (r) => r.dueDate },
-          { key: "amount", header: "Valor", align: "right", render: (r) => <span className="ina-money">{r.amount}</span> },
-          { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
-        ]}
-        rows={INITIAL}
-      />
+      {error && (
+        <p className="ina-badge ina-badge--danger" style={{ marginBottom: "1rem", display: "inline-block" }}>
+          {error}
+        </p>
+      )}
 
-      <PayableFormDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      {loading ? (
+        <p style={{ color: "var(--color-text-muted)" }}>Carregando...</p>
+      ) : (
+        <DataTable
+          columns={[
+            { key: "vendor", header: "Fornecedor", render: (r) => r.vendor },
+            { key: "due", header: "Vencimento", render: (r) => r.dueDate },
+            { key: "amount", header: "Valor", align: "right", render: (r) => <span className="ina-money">{r.amount}</span> },
+            { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
+          ]}
+          rows={rows}
+        />
+      )}
+
+      <PayableFormDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onCreated={() => {
+          setLoading(true);
+          void load();
+        }}
+      />
     </>
   );
 }

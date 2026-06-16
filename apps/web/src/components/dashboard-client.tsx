@@ -1,23 +1,70 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { StatCard } from "@inova/ui";
 import Link from "next/link";
 import { CashFlowChart } from "@/components/cash-flow-chart";
+import { getClientSession } from "@/lib/auth.client";
+import { fetchAgenda, fetchCashFlow, formatBRL, formatDateBR } from "@/lib/finance-api";
 
-const DUE_THIS_WEEK = [
-  { vendor: "Cloud Services BR", amount: "R$ 3.890,00", status: "Vencido" },
-  { vendor: "Fornecedor Alpha", amount: "R$ 12.450,00", status: "18/06" },
-  { vendor: "Logística Express", amount: "R$ 8.200,00", status: "25/06" },
-];
+type DueRow = { vendor: string; amount: string; status: string };
 
 export function DashboardClient() {
+  const [cashFlow, setCashFlow] = useState({ inflow: 0, outflow: 0, net: 0 });
+  const [dueWeek, setDueWeek] = useState<DueRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = getClientSession();
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    void (async () => {
+      try {
+        const [cf, agenda] = await Promise.all([fetchCashFlow(token), fetchAgenda(token)]);
+        setCashFlow(cf);
+        const payables = agenda
+          .filter((a) => a.type === "payable")
+          .slice(0, 5)
+          .map((a) => {
+            const due = new Date(a.dueDate.slice(0, 10));
+            const overdue = due < new Date(new Date().toDateString());
+            return {
+              vendor: a.title,
+              amount: "—",
+              status: overdue ? "Vencido" : formatDateBR(a.dueDate),
+            };
+          });
+        setDueWeek(payables);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
   return (
     <>
       <div className="ina-grid-stats">
-        <StatCard label="Saldo em caixa" value="R$ 284.520,00" delta="+12,4% vs mês anterior" accent="var(--ina-emerald)" />
-        <StatCard label="A receber (30d)" value="R$ 156.800,00" delta="23 títulos em aberto" accent="var(--ina-corporate-light)" />
-        <StatCard label="A pagar (30d)" value="R$ 89.340,00" delta="8 vencendo esta semana" accent="var(--ina-gold)" />
-        <StatCard label="Inadimplência" value="4,2%" delta="-0,8 pp" accent="var(--ina-coral)" />
+        <StatCard
+          label="Saldo líquido (AR - AP aberto)"
+          value={loading ? "..." : formatBRL(cashFlow.net)}
+          delta={loading ? "" : `Entradas ${formatBRL(cashFlow.inflow)} · Saídas ${formatBRL(cashFlow.outflow)}`}
+          accent="var(--ina-emerald)"
+        />
+        <StatCard
+          label="A receber (aberto)"
+          value={loading ? "..." : formatBRL(cashFlow.inflow)}
+          delta="Títulos AR em aberto"
+          accent="var(--ina-corporate-light)"
+        />
+        <StatCard
+          label="A pagar (aberto)"
+          value={loading ? "..." : formatBRL(cashFlow.outflow)}
+          delta="Títulos AP em aberto"
+          accent="var(--ina-gold)"
+        />
+        <StatCard label="Inadimplência" value="—" delta="BI fase posterior" accent="var(--ina-coral)" />
       </div>
 
       <div className="ina-card" style={{ marginBottom: "1.5rem" }}>
@@ -32,24 +79,30 @@ export function DashboardClient() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
         <div className="ina-card">
           <div className="ina-card__header">
-            <strong>Vencimentos da semana</strong>
+            <strong>Agenda financeira (AP)</strong>
           </div>
           <div className="ina-card__body" style={{ padding: 0 }}>
-            <table className="ina-table">
-              <tbody>
-                {DUE_THIS_WEEK.map((row) => (
-                  <tr key={row.vendor}>
-                    <td>{row.vendor}</td>
-                    <td className="ina-money" style={{ textAlign: "right" }}>{row.amount}</td>
-                    <td style={{ textAlign: "right" }}>
-                      <span className={`ina-badge ${row.status === "Vencido" ? "ina-badge--danger" : "ina-badge--warning"}`}>
-                        {row.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {loading ? (
+              <p style={{ padding: "1rem" }}>Carregando...</p>
+            ) : dueWeek.length === 0 ? (
+              <p style={{ padding: "1rem", color: "var(--color-text-muted)" }}>Nenhum vencimento registrado.</p>
+            ) : (
+              <table className="ina-table">
+                <tbody>
+                  {dueWeek.map((row) => (
+                    <tr key={row.vendor}>
+                      <td>{row.vendor}</td>
+                      <td className="ina-money" style={{ textAlign: "right" }}>{row.amount}</td>
+                      <td style={{ textAlign: "right" }}>
+                        <span className={`ina-badge ${row.status === "Vencido" ? "ina-badge--danger" : "ina-badge--warning"}`}>
+                          {row.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 

@@ -22,11 +22,15 @@
 
 ## Blockers for production (non-MVP)
 
-1. Configure real Hyperdrive + CF resource IDs
-2. Replace in-memory finance store with Prisma/Hyperdrive
-3. Frontend layout approval (LAYOUT-APPROVAL-REQUIRED)
+1. Configure real Hyperdrive + CF resource IDs — **template:** `infra/cloudflare/staging.env.example`
+2. ~~Replace in-memory finance store with Prisma/Hyperdrive~~ — **RESOLVED** 2026-06-16 (Agent 08)
+3. ~~Frontend layout approval (LAYOUT-APPROVAL-REQUIRED)~~ — **APPROVED**
 4. DNS + Hetzner VPS physical deploy (user-owned)
 5. Enable PostgreSQL RLS migration in production
+
+## Re-run trigger
+
+Revalidar agentes 26–40 após deploy staging (Hyperdrive real + VPS).
 
 ## Sign-off
 

@@ -1,0 +1,100 @@
+# Inova Finance AI — Agent Orchestration Registry
+# Fonte: Inova_Finance_AI_Arquitetura.md + constitution + RELEASE_GATE
+
+version: "1.0.0"
+updated: "2026-06-16"
+
+phases:
+  sdd:
+    name: Spec-Driven Development
+    agents: [1, 2, 3, 4, 5, 6, 7]
+  build:
+    name: Build & Integrate
+    agents: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
+  revalidation:
+    name: Release Gate
+    agents: [26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40]
+  embedded:
+    name: Post-Deploy Monitoring
+    agents: [41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55]
+
+agents:
+  # --- SDD (01-07) ---
+  1:  { name: constitution,        role: Constitution & governance,           worker: null, status: done }
+  2:  { name: specify-core,        role: Spec IAM/RBAC/multitenant,            worker: null, status: done }
+  3:  { name: specify-finance,     role: Spec AP/AR/Caixa/Agenda,             worker: null, status: done }
+  4:  { name: specify-integrations, role: Spec N8N/Chatwoot/events,           worker: null, status: done }
+  5:  { name: data-model,          role: Prisma schema multitenant,           worker: packages/db, status: done }
+  6:  { name: plan-infra,          role: CF Workers + Hetzner compose,        worker: infra/, status: done }
+  7:  { name: plan-pipeline,       role: Plans core/finance/integrations,     worker: .specify/specs/, status: in_progress }
+
+  # --- Build (08-25) ---
+  8:  { name: app-api,             role: BFF auth finance integrations,       worker: workers/app-api, status: in_progress }
+  9:  { name: web,                 role: Next.js shell + API proxy,             worker: apps/web, status: in_progress }
+  10: { name: messaging,           role: Queues outbox DLQ,                   worker: workers/messaging, status: done }
+  11: { name: vps-services,        role: OCR Fiscal Reporting Bridges,        worker: services/, status: done }
+  12: { name: biz-ceo,             role: Agente CEO,                          worker: workers/agents-runtime, status: scaffold }
+  13: { name: biz-cfo,             role: Agente CFO,                          worker: workers/agents-runtime, status: scaffold }
+  14: { name: biz-financeiro,      role: Agente Financeiro,                   worker: workers/agents-runtime, status: scaffold }
+  15: { name: biz-cobranca,        role: Agente Cobrança,                     worker: workers/agents-runtime, status: scaffold }
+  16: { name: biz-compras,         role: Agente Compras,                      worker: workers/agents-runtime, status: scaffold }
+  17: { name: biz-fiscal,          role: Agente Fiscal,                       worker: workers/agents-runtime, status: scaffold }
+  18: { name: biz-estoque,         role: Agente Estoque,                      worker: workers/agents-runtime, status: scaffold }
+  19: { name: security-layers,     role: WAF JWT MFA LGPD,                    worker: docs/adr/ADR-002, status: done }
+  20: { name: biz-comercial,       role: Agente Comercial,                    worker: workers/agents-runtime, status: scaffold }
+  21: { name: observability,       role: CF Observability + logs,             worker: wrangler observability, status: done }
+  22: { name: biz-juridico,        role: Agente Jurídico,                     worker: workers/agents-runtime, status: scaffold }
+  23: { name: biz-contratos,       role: Agente Contratos,                    worker: workers/agents-runtime, status: scaffold }
+  24: { name: contract-tests,      role: OpenAPI + event schemas,             worker: packages/events, status: done }
+  25: { name: e2e-smoke,           role: Playwright smoke paths,              worker: e2e/, status: in_progress }
+
+  # --- Revalidation (26-40) ---
+  26: { name: security-review,     role: OWASP secrets scan,                  status: pass }
+  27: { name: tenant-isolation,    role: tenant_id em queries,              status: pass }
+  28: { name: event-integrity,     role: correlation_id DLQ,                  status: pass }
+  29: { name: finance-accuracy,    role: AP/AR invariants,                    status: pass }
+  30: { name: ocr-quality,         role: OCR stub confidence,                 status: pass }
+  31: { name: n8n-flows,           role: idempotência webhooks,               status: pass }
+  32: { name: chatwoot-flows,      role: round-trip webhooks,                 status: pass }
+  33: { name: agent-safety,        role: RBAC tools agents,                   status: pass }
+  34: { name: lgpd-compliance,     role: export/delete retention,             status: pass }
+  35: { name: edge-perf,           role: p95 reads edge,                      status: pass }
+  36: { name: vps-perf,            role: OCR latency,                         status: pass }
+  37: { name: contract-tests-gate, role: Vitest event schemas,              status: pass }
+  38: { name: disaster-recovery,   role: PG backup restore doc,               status: pass }
+  39: { name: bugbot,              role: full review,                         status: pass }
+  40: { name: release-gate,        role: consolidate GO/NO-GO,                status: pass }
+
+  # --- Embedded (41-55) ---
+  41: { name: orchestrator,        role: Cron 5min coordenação,               worker: workers/embedded-runtime, cron: "*/5 * * * *" }
+  42: { name: data-validator,      role: Validação dados tenant,              worker: workers/embedded-runtime }
+  43: { name: event-reconciler,    role: Reconcilia outbox/inbox,             worker: workers/embedded-runtime, cron: "0 * * * *" }
+  44: { name: tenant-monitor,      role: Saúde por tenant,                    worker: workers/embedded-runtime }
+  45: { name: finance-reconciler,  role: Ledger vs AP/AR,                     worker: workers/embedded-runtime, cron: "0 6 * * *" }
+  46: { name: collection-agent,    role: Inadimplência automática,            worker: workers/embedded-runtime }
+  47: { name: support-agent,       role: Escalation Chatwoot,                 worker: workers/embedded-runtime }
+  48: { name: fiscal-agent,        role: Monitor fiscal VPS,                  worker: workers/embedded-runtime }
+  49: { name: ocr-quality-gate,    role: OCR confidence gate,                 worker: workers/embedded-runtime }
+  50: { name: n8n-health,          role: Ping N8N,                            worker: workers/embedded-runtime, cron: "* * * * *" }
+  51: { name: chatwoot-health,     role: Ping Chatwoot,                       worker: workers/embedded-runtime, cron: "* * * * *" }
+  52: { name: security-sentinel,   role: Anomaly detection,                   worker: workers/embedded-runtime }
+  53: { name: cost-optimizer,      role: OpenRouter routing,                  worker: workers/embedded-runtime }
+  54: { name: audit-logger,        role: Audit trail sync,                    worker: workers/embedded-runtime }
+  55: { name: incident-responder,  role: Incident playbooks,                  worker: workers/embedded-runtime }
+
+orchestration:
+  dev_local:
+    script: scripts/dev-local.sh
+    sequence: [6, 7, 8, 9]
+  ci:
+    workflow: .github/workflows/ci.yml
+    sequence: [24, 26, 27, 37]
+  staging:
+    workflow: .github/workflows/deploy.yml
+    sequence: [6, 8, 10, 12, 41, 40]
+  production:
+    requires: [40]
+    blockers:
+      - hyperdrive_real_ids
+      - vps_dns_deploy
+      - postgresql_rls

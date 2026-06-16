@@ -1,0 +1,5 @@
+{
+  "feature_directory": ".specify/specs/pipeline",
+  "branch": "main",
+  "description": "Pipeline S2-S3 — Prisma, frontend API, staging prep"
+}

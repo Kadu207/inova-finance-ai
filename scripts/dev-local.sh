@@ -96,7 +96,7 @@ wait_postgres() {
 cmd_start() {
   ensure_node
   echo "==> [Agent 06 Infra] Subindo PostgreSQL (porta INA $PG_PORT)..."
-  docker_cmd compose -f "$COMPOSE_DIR/docker-compose.yml" --env-file "$COMPOSE_DIR/.env" up -d postgres
+  docker_cmd compose -f "$COMPOSE_DIR/docker-compose.yml" --env-file "$COMPOSE_DIR/.env" up -d postgres redis
   wait_postgres
 
   echo "==> [Agent 07 DB] Sincronizando schema Prisma..."
