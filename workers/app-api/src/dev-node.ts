@@ -3,28 +3,13 @@ import type { IncomingMessage, Server } from "node:http";
 import app from "./app";
 import { createLocalEnv } from "./local-env";
 import { INA_PORTS } from "@inova/config";
+import { loadDatabaseEnv } from "./db/env";
+import { seedDemoData } from "./db/seed";
+
+loadDatabaseEnv();
 
 const port = Number(process.env.PORT ?? INA_PORTS.appApi);
 const env = createLocalEnv();
-
-async function seedDemoAdmin(env: ReturnType<typeof createLocalEnv>) {
-  const demoKey = "user:admin@inova.local";
-  const existing = await env.SESSIONS.get(demoKey, "json");
-  if (existing) return;
-
-  const { hashPassword } = await import("./auth");
-  await env.SESSIONS.put(
-    demoKey,
-    JSON.stringify({
-      userId: "user_demo_admin",
-      email: "admin@inova.local",
-      passwordHash: await hashPassword("changeme"),
-      role: "admin",
-      mfaEnabled: false,
-      branchIds: ["branch_main"],
-    }),
-  );
-}
 
 async function readBody(req: IncomingMessage): Promise<Buffer | undefined> {
   if (req.method === "GET" || req.method === "HEAD") return undefined;
@@ -80,12 +65,15 @@ function createAppServer(): Server {
 const server = createAppServer();
 
 server.listen(port, "127.0.0.1", async () => {
-  await seedDemoAdmin(env);
+  await seedDemoData();
   console.log(`Inova App API http://127.0.0.1:${port} (INA port ${INA_PORTS.appApi})`);
   console.log(`Demo login: admin@inova.local / changeme`);
+  console.log(`Dica: Ctrl+C encerra este processo. Se a porta estiver em uso: pnpm --filter @inova/app-api dev:stop`);
 }).on("error", (err: NodeJS.ErrnoException) => {
   if (err.code === "EADDRINUSE") {
-    console.error(`Porta INA ${port} em uso. Veja docs/PORTS.md — pare o processo ou use PORT=<outra>.`);
+    console.error(`Porta INA ${port} em uso. Encerre o processo anterior:`);
+    console.error(`  pnpm --filter @inova/app-api dev:stop`);
+    console.error(`Ou use outra porta: PORT=${INA_PORTS.appApi + 1} pnpm --filter @inova/app-api dev`);
   } else {
     console.error(err);
   }

@@ -4,6 +4,7 @@ dist/
 .open-next/
 .wrangler/
 .turbo/
+.dev/
 coverage/
 *.log
 .env

@@ -3,6 +3,14 @@ import { createEvent } from "@inova/events";
 import type { Env, TenantContext } from "../types";
 import { verifyJwt } from "../auth";
 import { hasPermission } from "../rbac";
+import {
+  listPayables,
+  createPayable,
+  listReceivables,
+  createReceivable,
+  getCashFlow,
+  getAgenda,
+} from "../db/finance-store";
 
 type FinanceVars = { tenant: TenantContext };
 
@@ -17,19 +25,9 @@ financeRoutes.use("*", async (c, next) => {
   await next();
 });
 
-// In-memory store for MVP tests; production uses Hyperdrive + Prisma
-const payablesStore = new Map<string, Record<string, unknown>>();
-const receivablesStore = new Map<string, Record<string, unknown>>();
-
-function scopedKey(tenantId: string, id: string) {
-  return `${tenantId}:${id}`;
-}
-
-financeRoutes.get("/payables", (c) => {
+financeRoutes.get("/payables", async (c) => {
   const tenant = c.get("tenant");
-  const items = [...payablesStore.entries()]
-    .filter(([k]) => k.startsWith(`${tenant.tenantId}:`))
-    .map(([, v]) => v);
+  const items = await listPayables(tenant.tenantId);
   return c.json({ data: items });
 });
 
@@ -48,40 +46,28 @@ financeRoutes.post("/payables", async (c) => {
     branchId: string;
   }>();
   const idempotencyKey = c.req.header("X-Idempotency-Key") ?? crypto.randomUUID();
-  const existing = [...payablesStore.values()].find(
-    (p) => p.tenantId === tenant.tenantId && p.idempotencyKey === idempotencyKey,
-  );
-  if (existing) return c.json({ data: existing });
 
-  const id = crypto.randomUUID();
-  const payable = {
-    id,
-    tenantId: tenant.tenantId,
-    branchId: body.branchId,
+  const payable = await createPayable(tenant.tenantId, {
     supplierName: body.supplierName,
     amount: body.amount,
     dueDate: body.dueDate,
-    status: "open",
+    branchId: body.branchId,
     idempotencyKey,
-    createdAt: new Date().toISOString(),
-  };
-  payablesStore.set(scopedKey(tenant.tenantId, id), payable);
+  });
 
   const event = createEvent(
     "PayableCreated",
     { tenantId: tenant.tenantId, correlationId: tenant.correlationId, idempotencyKey },
-    { payableId: id, amount: body.amount, dueDate: body.dueDate },
+    { payableId: payable.id, amount: body.amount, dueDate: body.dueDate },
   );
   await c.env.EVENTS_QUEUE.send(event);
 
   return c.json({ data: payable }, 201);
 });
 
-financeRoutes.get("/receivables", (c) => {
+financeRoutes.get("/receivables", async (c) => {
   const tenant = c.get("tenant");
-  const items = [...receivablesStore.entries()]
-    .filter(([k]) => k.startsWith(`${tenant.tenantId}:`))
-    .map(([, v]) => v);
+  const items = await listReceivables(tenant.tenantId);
   return c.json({ data: items });
 });
 
@@ -101,50 +87,32 @@ financeRoutes.post("/receivables", async (c) => {
   }>();
   const idempotencyKey = c.req.header("X-Idempotency-Key") ?? crypto.randomUUID();
 
-  const id = crypto.randomUUID();
-  const receivable = {
-    id,
-    tenantId: tenant.tenantId,
-    branchId: body.branchId,
+  const receivable = await createReceivable(tenant.tenantId, {
     customerName: body.customerName,
     amount: body.amount,
     dueDate: body.dueDate,
-    status: "open",
+    branchId: body.branchId,
     idempotencyKey,
-    createdAt: new Date().toISOString(),
-  };
-  receivablesStore.set(scopedKey(tenant.tenantId, id), receivable);
+  });
 
   const event = createEvent(
     "ReceivableCreated",
     { tenantId: tenant.tenantId, correlationId: tenant.correlationId, idempotencyKey },
-    { receivableId: id, amount: body.amount, dueDate: body.dueDate },
+    { receivableId: receivable.id, amount: body.amount, dueDate: body.dueDate },
   );
   await c.env.EVENTS_QUEUE.send(event);
 
   return c.json({ data: receivable }, 201);
 });
 
-financeRoutes.get("/cash-flow", (c) => {
+financeRoutes.get("/cash-flow", async (c) => {
   const tenant = c.get("tenant");
-  const payables = [...payablesStore.values()].filter((p) => p.tenantId === tenant.tenantId && p.status === "open");
-  const receivables = [...receivablesStore.values()].filter((r) => r.tenantId === tenant.tenantId && r.status === "open");
-  const outflow = payables.reduce((s, p) => s + parseFloat(String(p.amount)), 0);
-  const inflow = receivables.reduce((s, r) => s + parseFloat(String(r.amount)), 0);
-  return c.json({ data: { inflow, outflow, net: inflow - outflow } });
+  const data = await getCashFlow(tenant.tenantId);
+  return c.json({ data });
 });
 
-financeRoutes.get("/agenda", (c) => {
+financeRoutes.get("/agenda", async (c) => {
   const tenant = c.get("tenant");
-  const items = [
-    ...[...payablesStore.values()]
-      .filter((p) => p.tenantId === tenant.tenantId)
-      .map((p) => ({ type: "payable", id: p.id, title: p.supplierName, dueDate: p.dueDate })),
-    ...[...receivablesStore.values()]
-      .filter((r) => r.tenantId === tenant.tenantId)
-      .map((r) => ({ type: "receivable", id: r.id, title: r.customerName, dueDate: r.dueDate })),
-  ];
+  const items = await getAgenda(tenant.tenantId);
   return c.json({ data: items });
 });
-
-export { payablesStore, receivablesStore };

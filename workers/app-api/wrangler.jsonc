@@ -24,7 +24,7 @@
     {
       "binding": "HYPERDRIVE",
       "id": "HYPERDRIVE_ID",
-      "localConnectionString": "postgresql://inova:inova_dev@127.0.0.1:5432/inova_finance"
+      "localConnectionString": "postgresql://inova:inova_dev@127.0.0.1:5442/inova_finance"
     }
   ],
   "env": {

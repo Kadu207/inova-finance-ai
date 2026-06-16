@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx src/dev-node.ts",
+    "dev:stop": "fuser -k 8810/tcp 2>/dev/null || true",
     "dev:cf": "wrangler dev --port 8810",
     "build": "wrangler deploy --dry-run",
     "deploy": "wrangler deploy",
@@ -14,6 +15,7 @@
   },
   "dependencies": {
     "@inova/config": "workspace:*",
+    "@inova/db": "workspace:*",
     "@inova/events": "workspace:*",
     "hono": "4.7.9"
   },

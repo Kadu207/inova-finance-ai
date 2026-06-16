@@ -12,7 +12,11 @@
     "typecheck": "turbo run typecheck",
     "db:generate": "pnpm --filter @inova/db generate",
     "db:migrate": "pnpm --filter @inova/db migrate",
-    "db:push": "pnpm --filter @inova/db push"
+    "db:push": "pnpm --filter @inova/db push",
+    "dev:local": "bash scripts/dev-local.sh start",
+    "dev:local:stop": "bash scripts/dev-local.sh stop",
+    "dev:local:status": "bash scripts/dev-local.sh status",
+    "dev:local:restart": "bash scripts/dev-local.sh restart"
   },
   "devDependencies": {
     "turbo": "2.3.3",

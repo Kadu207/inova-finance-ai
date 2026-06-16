@@ -24,6 +24,20 @@ infra/                 Cloudflare + Hetzner docker-compose
 
 Portas dedicadas INA — ver [docs/PORTS.md](docs/PORTS.md).
 
+### Dev local automatizado (recomendado)
+
+No **SERVER** (terminal Cursor ou Debian), dentro do projeto:
+
+```bash
+cd ~/Projetos\ DEV/Inova\ Finance\ AI
+newgrp docker          # 1ª vez por sessão, se docker ps falhar
+pnpm dev:local         # Postgres + db:push + API :8810 + Web :3100
+pnpm dev:local:status  # verificar serviços
+pnpm dev:local:stop    # parar API + Web
+```
+
+### Dev manual
+
 ```bash
 pnpm install
 pnpm db:generate
@@ -31,7 +45,7 @@ pnpm db:generate
 # 1) API (porta fixa 8810)
 pnpm --filter @inova/app-api dev
 
-# 2) Web (porta fixa 3100) — se EBUSY no OneDrive: pnpm --filter @inova/web dev:clean
+# 2) Web (porta fixa 3100)
 pnpm --filter @inova/web dev
 
 # VPS stack (portas INA: PG 5442, Redis 6381, N8N 5680, Chatwoot 3101)

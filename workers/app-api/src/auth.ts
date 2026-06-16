@@ -1,4 +1,4 @@
-import type { AuthUser } from "../types";
+import type { AuthUser } from "./types";
 
 const encoder = new TextEncoder();
 
