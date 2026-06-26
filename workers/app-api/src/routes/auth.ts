@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { signJwt, verifyPassword, hashPassword } from "../auth";
+import { signJwt, verifyJwt, verifyPassword, hashPassword } from "../auth";
 import { generateTotpSecret, buildTotpUri, verifyTotp } from "../mfa";
 import { requireMfaForRole } from "../rbac";
 import { enableMfaForUser, verifyDbCredentials } from "../db/auth-store";
@@ -16,7 +16,9 @@ authRoutes.post("/login", async (c) => {
   const db = await getDb(resolveConnectionString(c.env));
   let userRecord = await verifyDbCredentials(db, body.email, body.password, tenantId);
 
-  if (!userRecord) {
+  // C3 — O fallback de demo em KV (incl. bootstrap do admin com senha fixa)
+  // NUNCA roda em produção: lá a autenticação depende exclusivamente do banco.
+  if (!userRecord && c.env.ENVIRONMENT !== "production") {
     const demoKey = `user:${body.email}`;
     let kvRecord = (await c.env.SESSIONS.get(demoKey, "json")) as {
       userId: string;
@@ -47,6 +49,10 @@ authRoutes.post("/login", async (c) => {
     userRecord = { ...kvRecord, tenantId };
   }
 
+  if (!userRecord) {
+    return c.json({ error: "Credenciais inválidas" }, 401);
+  }
+
   if (requireMfaForRole(userRecord.role) && userRecord.mfaEnabled) {
     if (!body.totp || !userRecord.mfaSecret || !(await verifyTotp(userRecord.mfaSecret, body.totp))) {
       return c.json({ error: "MFA obrigatório", mfaRequired: true }, 401);
@@ -68,30 +74,37 @@ authRoutes.post("/login", async (c) => {
 });
 
 authRoutes.post("/mfa/setup", async (c) => {
-  const auth = c.req.header("Authorization")?.replace("Bearer ", "");
-  if (!auth) return c.json({ error: "Unauthorized" }, 401);
+  // C4 — exige JWT válido; o e-mail vem do token, nunca do body (impede
+  // configurar MFA para a conta de terceiros).
+  const token = c.req.header("Authorization")?.replace("Bearer ", "");
+  const user = token ? await verifyJwt(token, c.env.JWT_SECRET) : null;
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
 
-  const body = await c.req.json<{ email: string }>();
   const secret = generateTotpSecret();
-  const uri = buildTotpUri(secret, body.email);
+  const uri = buildTotpUri(secret, user.email);
 
-  await c.env.SESSIONS.put(`mfa-pending:${body.email}`, secret, { expirationTtl: 600 });
+  await c.env.SESSIONS.put(`mfa-pending:${user.email}`, secret, { expirationTtl: 600 });
 
   return c.json({ secret, uri });
 });
 
 authRoutes.post("/mfa/verify", async (c) => {
-  const body = await c.req.json<{ email: string; totp: string }>();
-  const pending = await c.env.SESSIONS.get(`mfa-pending:${body.email}`);
+  // C4 — exige JWT válido; o e-mail vem do token, nunca do body.
+  const token = c.req.header("Authorization")?.replace("Bearer ", "");
+  const user = token ? await verifyJwt(token, c.env.JWT_SECRET) : null;
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+  const body = await c.req.json<{ totp: string }>();
+  const pending = await c.env.SESSIONS.get(`mfa-pending:${user.email}`);
   if (!pending) return c.json({ error: "Setup expirado" }, 400);
 
   const valid = await verifyTotp(pending, body.totp);
   if (!valid) return c.json({ error: "Código inválido" }, 400);
 
   const db = await getDb(resolveConnectionString(c.env));
-  const enabledInDb = await enableMfaForUser(db, body.email, pending);
+  const enabledInDb = await enableMfaForUser(db, user.email, pending);
   if (!enabledInDb) {
-    const demoKey = `user:${body.email}`;
+    const demoKey = `user:${user.email}`;
     const userRecord = (await c.env.SESSIONS.get(demoKey, "json")) as Record<string, unknown> | null;
     if (userRecord) {
       await c.env.SESSIONS.put(
@@ -101,6 +114,6 @@ authRoutes.post("/mfa/verify", async (c) => {
     }
   }
 
-  await c.env.SESSIONS.delete(`mfa-pending:${body.email}`);
+  await c.env.SESSIONS.delete(`mfa-pending:${user.email}`);
   return c.json({ mfaEnabled: true });
 });
