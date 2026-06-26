@@ -105,10 +105,10 @@ export default {
       await recordRun(env, EMBEDDED_AGENTS[agentId as keyof typeof EMBEDDED_AGENTS] ?? "unknown");
       return Response.json({ ran: agentId });
     }
-    return Response.json({ error: "Not found" }, 404);
+    return Response.json({ error: "Not found" }, { status: 404 });
   },
 
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const cron = event.cron;
 
     ctx.waitUntil(
