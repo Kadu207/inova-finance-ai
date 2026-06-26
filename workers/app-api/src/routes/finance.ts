@@ -1,8 +1,10 @@
 import { Hono } from "hono";
 import { createEvent } from "@inova/events";
+import type { PrismaClient } from "@inova/db";
 import type { Env, TenantContext, AuthUser } from "../types";
 import { verifyJwt } from "../auth";
 import { hasPermission } from "../rbac";
+import { getDb, resolveConnectionString } from "../db/client";
 import {
   listPayables,
   createPayable,
@@ -12,7 +14,7 @@ import {
   getAgenda,
 } from "../db/finance-store";
 
-type FinanceVars = { tenant: TenantContext; user: AuthUser };
+type FinanceVars = { tenant: TenantContext; user: AuthUser; db: PrismaClient | null };
 
 export const financeRoutes = new Hono<{ Bindings: Env; Variables: FinanceVars }>();
 
@@ -41,12 +43,13 @@ financeRoutes.use("*", async (c, next) => {
   }
   c.set("tenant", { ...headerTenant, tenantId: user.tenantId, userId: user.userId });
   c.set("user", user);
+  c.set("db", await getDb(resolveConnectionString(c.env)));
   await next();
 });
 
 financeRoutes.get("/payables", async (c) => {
   const tenant = c.get("tenant");
-  const items = await listPayables(tenant.tenantId);
+  const items = await listPayables(c.get("db"), tenant.tenantId);
   return c.json({ data: items });
 });
 
@@ -65,7 +68,7 @@ financeRoutes.post("/payables", async (c) => {
   }>();
   const idempotencyKey = c.req.header("X-Idempotency-Key") ?? crypto.randomUUID();
 
-  const payable = await createPayable(tenant.tenantId, {
+  const payable = await createPayable(c.get("db"), tenant.tenantId, {
     supplierName: body.supplierName,
     amount: body.amount,
     dueDate: body.dueDate,
@@ -85,7 +88,7 @@ financeRoutes.post("/payables", async (c) => {
 
 financeRoutes.get("/receivables", async (c) => {
   const tenant = c.get("tenant");
-  const items = await listReceivables(tenant.tenantId);
+  const items = await listReceivables(c.get("db"), tenant.tenantId);
   return c.json({ data: items });
 });
 
@@ -104,7 +107,7 @@ financeRoutes.post("/receivables", async (c) => {
   }>();
   const idempotencyKey = c.req.header("X-Idempotency-Key") ?? crypto.randomUUID();
 
-  const receivable = await createReceivable(tenant.tenantId, {
+  const receivable = await createReceivable(c.get("db"), tenant.tenantId, {
     customerName: body.customerName,
     amount: body.amount,
     dueDate: body.dueDate,
@@ -124,12 +127,12 @@ financeRoutes.post("/receivables", async (c) => {
 
 financeRoutes.get("/cash-flow", async (c) => {
   const tenant = c.get("tenant");
-  const data = await getCashFlow(tenant.tenantId);
+  const data = await getCashFlow(c.get("db"), tenant.tenantId);
   return c.json({ data });
 });
 
 financeRoutes.get("/agenda", async (c) => {
   const tenant = c.get("tenant");
-  const items = await getAgenda(tenant.tenantId);
+  const items = await getAgenda(c.get("db"), tenant.tenantId);
   return c.json({ data: items });
 });

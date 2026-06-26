@@ -4,6 +4,7 @@ import app from "./app";
 import { createLocalEnv } from "./local-env";
 import { INA_PORTS } from "@inova/config";
 import { loadDatabaseEnv } from "./db/env";
+import { getDb, resolveConnectionString } from "./db/client";
 import { seedDemoData } from "./db/seed";
 
 loadDatabaseEnv();
@@ -65,7 +66,7 @@ function createAppServer(): Server {
 const server = createAppServer();
 
 server.listen(port, "127.0.0.1", async () => {
-  await seedDemoData();
+  await seedDemoData(await getDb(resolveConnectionString(env)));
   console.log(`Inova App API http://127.0.0.1:${port} (INA port ${INA_PORTS.appApi})`);
   console.log(`Demo login: admin@inova.local / changeme`);
   console.log(`Dica: Ctrl+C encerra este processo. Se a porta estiver em uso: pnpm --filter @inova/app-api dev:stop`);
