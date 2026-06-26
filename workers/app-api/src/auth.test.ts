@@ -24,11 +24,6 @@ describe("MFA TOTP", () => {
   });
 });
 
-describe("Tenant isolation", () => {
-  it("scoped keys prevent cross-tenant access", () => {
-    const keyA = `tenant_a:pay_1`;
-    const keyB = `tenant_b:pay_1`;
-    expect(keyA.startsWith("tenant_a:")).toBe(true);
-    expect(keyB.startsWith("tenant_a:")).toBe(false);
-  });
-});
+// Isolamento multitenant real é testado de ponta a ponta (via app.fetch)
+// em ./routes/finance.test.ts, exercitando o cenário de header X-Tenant-Id
+// forjado. O teste antigo aqui era tautológico e foi removido.

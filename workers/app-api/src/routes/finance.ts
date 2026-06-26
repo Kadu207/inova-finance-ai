@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { createEvent } from "@inova/events";
-import type { Env, TenantContext } from "../types";
+import type { Env, TenantContext, AuthUser } from "../types";
 import { verifyJwt } from "../auth";
 import { hasPermission } from "../rbac";
 import {
@@ -12,7 +12,7 @@ import {
   getAgenda,
 } from "../db/finance-store";
 
-type FinanceVars = { tenant: TenantContext };
+type FinanceVars = { tenant: TenantContext; user: AuthUser };
 
 export const financeRoutes = new Hono<{ Bindings: Env; Variables: FinanceVars }>();
 
@@ -22,6 +22,25 @@ financeRoutes.use("*", async (c, next) => {
   const user = await verifyJwt(token, c.env.JWT_SECRET);
   if (!user) return c.json({ error: "Invalid token" }, 401);
   if (!hasPermission(user.role, "finance:read")) return c.json({ error: "Forbidden" }, 403);
+
+  // C1 — Isolamento multitenant (NON-NEGOTIABLE): o tenant de TODA query é
+  // derivado do JWT assinado, nunca do header X-Tenant-Id (controlado pelo
+  // cliente). Um header forjado/divergente não pode mais pivotar para outro
+  // tenant. O header serve apenas como pista/correlação.
+  const headerTenant = c.get("tenant");
+  if (headerTenant.tenantId !== user.tenantId) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        message: "tenant.header_mismatch",
+        headerTenantId: headerTenant.tenantId,
+        jwtTenantId: user.tenantId,
+        correlationId: headerTenant.correlationId,
+      }),
+    );
+  }
+  c.set("tenant", { ...headerTenant, tenantId: user.tenantId, userId: user.userId });
+  c.set("user", user);
   await next();
 });
 
@@ -33,9 +52,8 @@ financeRoutes.get("/payables", async (c) => {
 
 financeRoutes.post("/payables", async (c) => {
   const tenant = c.get("tenant");
-  const token = c.req.header("Authorization")!.replace("Bearer ", "");
-  const user = await verifyJwt(token, c.env.JWT_SECRET);
-  if (!user || !hasPermission(user.role, "finance:write")) {
+  const user = c.get("user");
+  if (!hasPermission(user.role, "finance:write")) {
     return c.json({ error: "Forbidden" }, 403);
   }
 
@@ -73,9 +91,8 @@ financeRoutes.get("/receivables", async (c) => {
 
 financeRoutes.post("/receivables", async (c) => {
   const tenant = c.get("tenant");
-  const token = c.req.header("Authorization")!.replace("Bearer ", "");
-  const user = await verifyJwt(token, c.env.JWT_SECRET);
-  if (!user || !hasPermission(user.role, "finance:write")) {
+  const user = c.get("user");
+  if (!hasPermission(user.role, "finance:write")) {
     return c.json({ error: "Forbidden" }, 403);
   }
 

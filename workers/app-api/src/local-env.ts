@@ -1,7 +1,11 @@
 import type { Env } from "./types";
 
-/** In-memory KV for local Node dev (when wrangler/workerd fails on Windows). */
-export class MemoryKV implements Pick<KVNamespace, "get" | "put" | "delete"> {
+/**
+ * In-memory KV for local Node dev (when wrangler/workerd fails on Windows).
+ * Não implementa o tipo `KVNamespace` (cujas sobrecargas de `get` são bem mais
+ * amplas); é um mock mínimo, convertido em `createLocalEnv` via `as unknown`.
+ */
+export class MemoryKV {
   private store = new Map<string, string>();
 
   async get(key: string, type?: "text"): Promise<string | null>;
@@ -33,11 +37,11 @@ export function createLocalEnv(): Env {
     HYPERDRIVE: {} as Hyperdrive,
     MESSAGING: {
       fetch: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    } as Fetcher,
+    } as unknown as Fetcher,
     EVENTS_QUEUE: {
       send: async (body: unknown) => {
         console.log(JSON.stringify({ level: "info", event: "queue.send", body }));
       },
-    } as Queue,
+    } as unknown as Queue,
   };
 }
