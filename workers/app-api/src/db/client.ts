@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@inova/db";
+import type { Prisma, PrismaClient } from "@inova/db";
 import type { Env } from "../types";
 
 const clients = new Map<string, PrismaClient>();
@@ -46,6 +46,24 @@ export async function getDb(connectionString: string | null): Promise<PrismaClie
   }
   clients.set(connectionString, client);
   return client;
+}
+
+/**
+ * Executa `fn` dentro de uma transação com `app.tenant_id` setado LOCALmente,
+ * habilitando as policies de Row-Level Security no Postgres — defense-in-depth do
+ * isolamento multitenant (C1). O `set_config(..., true)` é LOCAL à transação, então
+ * é seguro com pool de conexões (reseta no commit/rollback). Mesmo que um filtro de
+ * aplicação `where: { tenantId }` falhe, o banco não retorna linhas de outro tenant.
+ */
+export function withTenantScope<T>(
+  db: PrismaClient,
+  tenantId: string,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+    return fn(tx);
+  });
 }
 
 export function resetDbCacheForTests(): void {

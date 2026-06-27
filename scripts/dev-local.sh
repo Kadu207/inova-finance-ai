@@ -101,6 +101,8 @@ cmd_start() {
 
   echo "==> [Agent 07 DB] Sincronizando schema Prisma..."
   pnpm db:push
+  echo "==> [Agent 07 DB] Aplicando policies de RLS (isolamento multitenant)..."
+  pnpm db:rls
 
   if port_in_use "$API_PORT"; then
     echo "Porta $API_PORT ocupada — liberando..."
