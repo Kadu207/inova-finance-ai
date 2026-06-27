@@ -66,7 +66,19 @@ function createAppServer(): Server {
 const server = createAppServer();
 
 server.listen(port, "127.0.0.1", async () => {
-  await seedDemoData(await getDb(resolveConnectionString(env)));
+  // B3 — não derrubar o dev server se o banco configurado estiver fora; as
+  // requisições com banco passarão a retornar 500 explícito (sem fallback mudo).
+  try {
+    await seedDemoData(await getDb(resolveConnectionString(env)));
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "Falha ao conectar/seedar o PostgreSQL no startup; requisições financeiras retornarão 500",
+        detail: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
   console.log(`Inova App API http://127.0.0.1:${port} (INA port ${INA_PORTS.appApi})`);
   console.log(`Demo login: admin@inova.local / changeme`);
   console.log(`Dica: Ctrl+C encerra este processo. Se a porta estiver em uso: pnpm --filter @inova/app-api dev:stop`);

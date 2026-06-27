@@ -16,13 +16,13 @@ type ReceivableRow = {
   customer: string;
   dueDate: string;
   amount: string;
-  status: "open" | "received" | "overdue";
+  status: "open" | "paid" | "overdue";
 };
 
 function StatusBadge({ status }: { status: ReceivableRow["status"] }) {
   const map = {
     open: { label: "Em aberto", className: "ina-badge--warning" },
-    received: { label: "Recebido", className: "ina-badge--success" },
+    paid: { label: "Recebido", className: "ina-badge--success" },
     overdue: { label: "Inadimplente", className: "ina-badge--danger" },
   } as const;
   const s = map[status];

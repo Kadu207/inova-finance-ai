@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { createEvent } from "@inova/events";
 import type { Env, TenantContext } from "../types";
+import { timingSafeEqual } from "../auth";
 
 type IntegrationVars = { tenant: TenantContext };
 
@@ -52,7 +53,7 @@ integrationRoutes.post("/n8n/callback", async (c) => {
   );
   const expected = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
   const expectedB64 = btoa(String.fromCharCode(...new Uint8Array(expected)));
-  if (signature !== expectedB64) return c.json({ error: "Invalid signature" }, 401);
+  if (!timingSafeEqual(signature, expectedB64)) return c.json({ error: "Invalid signature" }, 401);
 
   return c.json({ received: true, tenantId: tenant.tenantId });
 });
