@@ -7,15 +7,41 @@ type IntegrationVars = { tenant: TenantContext };
 
 export const integrationRoutes = new Hono<{ Bindings: Env; Variables: IntegrationVars }>();
 
+/**
+ * Verifica a assinatura HMAC-SHA256 do corpo cru com VPS_WEBHOOK_SECRET, em tempo
+ * constante. Os webhooks de integração são máquina-a-máquina (chamados pelo relay/
+ * bridges confiável, não por navegadores) — por isso usam assinatura HMAC e não JWT.
+ * Sem assinatura válida a requisição é rejeitada, impedindo que qualquer um injete
+ * eventos para um tenant arbitrário via header X-Tenant-Id forjado.
+ */
+async function verifySignature(secret: string, rawBody: string, signature: string | undefined): Promise<boolean> {
+  if (!signature) return false;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const expected = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
+  const expectedB64 = btoa(String.fromCharCode(...new Uint8Array(expected)));
+  return timingSafeEqual(signature, expectedB64);
+}
+
 integrationRoutes.post("/chatwoot/webhook", async (c) => {
+  const raw = await c.req.text();
+  if (!(await verifySignature(c.env.VPS_WEBHOOK_SECRET, raw, c.req.header("X-Signature")))) {
+    return c.json({ error: "Invalid signature" }, 401);
+  }
+
   const tenant = c.get("tenant");
-  const body = await c.req.json<{
+  const body = JSON.parse(raw) as {
     event: string;
     id: number;
     conversation?: { id: number };
     content?: string;
     inbox?: { channel_type: string };
-  }>();
+  };
 
   if (body.event !== "message_created") {
     return c.json({ received: true, skipped: true });
@@ -38,29 +64,25 @@ integrationRoutes.post("/chatwoot/webhook", async (c) => {
 });
 
 integrationRoutes.post("/n8n/callback", async (c) => {
-  const signature = c.req.header("X-N8N-Signature");
-  if (!signature) return c.json({ error: "Missing signature" }, 401);
+  const raw = await c.req.text();
+  // Aceita X-Signature (padrão) ou X-N8N-Signature (compatibilidade).
+  const sig = c.req.header("X-Signature") ?? c.req.header("X-N8N-Signature");
+  if (!(await verifySignature(c.env.VPS_WEBHOOK_SECRET, raw, sig))) {
+    return c.json({ error: "Invalid signature" }, 401);
+  }
 
   const tenant = c.get("tenant");
-  const body = await c.req.text();
-
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(c.env.VPS_WEBHOOK_SECRET),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const expected = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
-  const expectedB64 = btoa(String.fromCharCode(...new Uint8Array(expected)));
-  if (!timingSafeEqual(signature, expectedB64)) return c.json({ error: "Invalid signature" }, 401);
-
   return c.json({ received: true, tenantId: tenant.tenantId });
 });
 
 integrationRoutes.post("/ocr/callback", async (c) => {
+  const raw = await c.req.text();
+  if (!(await verifySignature(c.env.VPS_WEBHOOK_SECRET, raw, c.req.header("X-Signature")))) {
+    return c.json({ error: "Invalid signature" }, 401);
+  }
+
   const tenant = c.get("tenant");
-  const body = await c.req.json<{ jobId: string; documentType: string; confidence?: number }>();
+  const body = JSON.parse(raw) as { jobId: string; documentType: string; confidence?: number };
   const idempotencyKey = c.req.header("X-Idempotency-Key") ?? `ocr-${body.jobId}`;
 
   const event = createEvent(
