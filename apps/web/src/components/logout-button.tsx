@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { clearSession } from "@/lib/auth.client";
+import { logout } from "@/lib/auth.client";
 
 export function LogoutButton() {
   const router = useRouter();
@@ -11,8 +11,8 @@ export function LogoutButton() {
       type="button"
       className="ina-btn ina-btn--ghost"
       style={{ fontSize: "0.8125rem" }}
-      onClick={() => {
-        clearSession();
+      onClick={async () => {
+        await logout();
         router.push("/login");
       }}
     >

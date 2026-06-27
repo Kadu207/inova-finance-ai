@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { DataTable } from "@inova/ui";
 import { PayableFormDrawer } from "./payable-form-drawer";
-import { getClientSession } from "@/lib/auth.client";
 import {
   fetchPayables,
   formatBRL,
@@ -47,15 +46,9 @@ export function PayablesClient() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const token = getClientSession();
-    if (!token) {
-      setError("Sessão expirada. Faça login novamente.");
-      setLoading(false);
-      return;
-    }
     try {
       setError(null);
-      const data = await fetchPayables(token);
+      const data = await fetchPayables();
       setRows(data.map(toRow));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao carregar contas a pagar");
