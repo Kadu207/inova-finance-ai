@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { getClientSession } from "@/lib/auth.client";
 import { createPayable } from "@/lib/finance-api";
 
 type PayableFormDrawerProps = {
@@ -40,16 +39,11 @@ export function PayableFormDrawer({ open, onClose, onCreated }: PayableFormDrawe
   }
 
   async function handleSubmit() {
-    const token = getClientSession();
-    if (!token) {
-      setSubmitError("Sessão expirada. Faça login novamente.");
-      return;
-    }
     setSubmitting(true);
     setSubmitError(null);
     try {
       const supplierName = form.description ? `${form.vendor} — ${form.description}` : form.vendor;
-      await createPayable(token, {
+      await createPayable({
         supplierName,
         amount: form.amount,
         dueDate: form.dueDate,

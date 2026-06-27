@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Logo } from "@inova/ui";
-import { apiClient } from "@/lib/api-client";
-import { setSession } from "@/lib/auth.client";
+import { login } from "@/lib/auth.client";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,16 +19,11 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const res = await apiClient.post<{ token: string; mfaRequired?: boolean }>("/auth/login", {
-        email,
-        password,
-        totp: totp || undefined,
-      });
+      const res = await login({ email, password, totp: totp || undefined });
       if (res.mfaRequired) {
         setMfaRequired(true);
         return;
       }
-      setSession(res.token);
       router.push("/dashboard");
     } catch (err) {
       const e = err as Error & { mfaRequired?: boolean };

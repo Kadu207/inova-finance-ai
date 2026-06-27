@@ -10,16 +10,16 @@ export type ApiContext = {
   tenantId: string;
   branchId?: string;
   correlationId?: string;
-  token?: string;
 };
 
+// A autenticação é feita pelo proxy server-side, que injeta o Authorization a
+// partir do cookie HttpOnly (C5). O cliente nunca manuseia o token.
 function buildHeaders(ctx: ApiContext): HeadersInit {
   return {
     "Content-Type": "application/json",
     "X-Tenant-Id": ctx.tenantId,
     ...(ctx.branchId ? { "X-Branch-Id": ctx.branchId } : {}),
     "X-Correlation-Id": ctx.correlationId ?? (typeof crypto !== "undefined" ? crypto.randomUUID() : `corr-${Date.now()}`),
-    ...(ctx.token ? { Authorization: `Bearer ${ctx.token}` } : {}),
   };
 }
 

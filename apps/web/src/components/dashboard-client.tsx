@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { StatCard } from "@inova/ui";
 import Link from "next/link";
 import { CashFlowChart } from "@/components/cash-flow-chart";
-import { getClientSession } from "@/lib/auth.client";
 import { fetchAgenda, fetchCashFlow, formatBRL, formatDateBR } from "@/lib/finance-api";
 
 type DueRow = { vendor: string; amount: string; status: string };
@@ -15,14 +14,9 @@ export function DashboardClient() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = getClientSession();
-    if (!token) {
-      setLoading(false);
-      return;
-    }
     void (async () => {
       try {
-        const [cf, agenda] = await Promise.all([fetchCashFlow(token), fetchAgenda(token)]);
+        const [cf, agenda] = await Promise.all([fetchCashFlow(), fetchAgenda()]);
         setCashFlow(cf);
         const payables = agenda
           .filter((a) => a.type === "payable")

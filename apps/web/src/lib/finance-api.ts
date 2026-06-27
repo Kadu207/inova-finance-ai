@@ -59,44 +59,40 @@ export function receivableStatusUi(status: ApiReceivable["status"], dueDate: str
   return due < new Date(new Date().toDateString()) ? "overdue" : "open";
 }
 
-export async function fetchPayables(token: string) {
-  const res = await apiClient.get<{ data: ApiPayable[] }>("/api/finance/payables", { token });
+export async function fetchPayables() {
+  const res = await apiClient.get<{ data: ApiPayable[] }>("/api/finance/payables");
   return res.data;
 }
 
 export async function createPayable(
-  token: string,
   body: { supplierName: string; amount: string; dueDate: string; branchId: string },
 ) {
   const res = await apiClient.post<{ data: ApiPayable }>("/api/finance/payables", body, {
-    token,
     correlationId: crypto.randomUUID(),
   });
   return res.data;
 }
 
-export async function fetchReceivables(token: string) {
-  const res = await apiClient.get<{ data: ApiReceivable[] }>("/api/finance/receivables", { token });
+export async function fetchReceivables() {
+  const res = await apiClient.get<{ data: ApiReceivable[] }>("/api/finance/receivables");
   return res.data;
 }
 
 export async function createReceivable(
-  token: string,
   body: { customerName: string; amount: string; dueDate: string; branchId: string },
 ) {
   const res = await apiClient.post<{ data: ApiReceivable }>("/api/finance/receivables", body, {
-    token,
     correlationId: crypto.randomUUID(),
   });
   return res.data;
 }
 
-export async function fetchCashFlow(token: string) {
-  const res = await apiClient.get<{ data: CashFlow }>("/api/finance/cash-flow", { token });
+export async function fetchCashFlow() {
+  const res = await apiClient.get<{ data: CashFlow }>("/api/finance/cash-flow");
   return res.data;
 }
 
-export async function fetchAgenda(token: string) {
-  const res = await apiClient.get<{ data: AgendaItem[] }>("/api/finance/agenda", { token });
+export async function fetchAgenda() {
+  const res = await apiClient.get<{ data: AgendaItem[] }>("/api/finance/agenda");
   return res.data;
 }

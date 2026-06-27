@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { DataTable } from "@inova/ui";
-import { getClientSession } from "@/lib/auth.client";
 import {
   createReceivable,
   fetchReceivables,
@@ -51,15 +50,9 @@ export function ReceivablesClient() {
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
-    const token = getClientSession();
-    if (!token) {
-      setError("Sessão expirada. Faça login novamente.");
-      setLoading(false);
-      return;
-    }
     try {
       setError(null);
-      const data = await fetchReceivables(token);
+      const data = await fetchReceivables();
       setRows(data.map(toRow));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao carregar contas a receber");
@@ -73,11 +66,10 @@ export function ReceivablesClient() {
   }, [load]);
 
   async function handleCreate() {
-    const token = getClientSession();
-    if (!token || !customer || !amount || !dueDate) return;
+    if (!customer || !amount || !dueDate) return;
     setSubmitting(true);
     try {
-      await createReceivable(token, {
+      await createReceivable({
         customerName: customer,
         amount,
         dueDate,
