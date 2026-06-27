@@ -1,4 +1,4 @@
-import type { Payable, Receivable } from "@inova/db";
+import type { Payable, PrismaClient, Receivable } from "@inova/db";
 import { hashPassword } from "../auth";
 
 export const DEMO_TENANT_ID = "demo-tenant";
@@ -34,9 +34,7 @@ export function serializeReceivable(row: Receivable) {
   };
 }
 
-export async function seedDemoData(): Promise<void> {
-  const { getDb } = await import("./client");
-  const db = await getDb();
+export async function seedDemoData(db: PrismaClient | null): Promise<void> {
   if (!db) return;
 
   await db.tenant.upsert({

@@ -97,9 +97,9 @@ export default {
     if (url.pathname === "/ingress" && request.method === "POST") {
       const tenantId = request.headers.get("X-Tenant-Id");
       const correlationId = request.headers.get("X-Correlation-Id") ?? crypto.randomUUID();
-      if (!tenantId) return Response.json({ error: "Missing X-Tenant-Id" }, 400);
+      if (!tenantId) return Response.json({ error: "Missing X-Tenant-Id" }, { status: 400 });
 
-      const raw = await request.json();
+      const raw = (await request.json()) as Record<string, unknown>;
       const event = validateEvent({
         ...raw,
         tenantId,
@@ -158,4 +158,4 @@ export default {
       }
     }
   },
-} satisfies ExportedHandler<Env>;
+} satisfies ExportedHandler<Env, BaseEvent>;

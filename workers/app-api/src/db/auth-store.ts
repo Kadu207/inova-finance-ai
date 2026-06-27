@@ -1,5 +1,4 @@
 import type { PrismaClient } from "@inova/db";
-import { getDb } from "./client";
 import { DEMO_ADMIN_EMAIL, DEMO_ADMIN_PASSWORD, DEMO_BRANCH_ID, DEMO_TENANT_ID } from "./seed";
 import { hashPassword, verifyPassword } from "../auth";
 
@@ -23,10 +22,10 @@ async function resolveTenantId(db: PrismaClient, tenantHeader: string): Promise<
 }
 
 export async function findUserForLogin(
+  db: PrismaClient | null,
   email: string,
   tenantHeader: string,
 ): Promise<DbUserRecord | null> {
-  const db = await getDb();
   if (!db) return null;
 
   const tenantId = await resolveTenantId(db, tenantHeader);
@@ -51,8 +50,11 @@ export async function findUserForLogin(
   };
 }
 
-export async function enableMfaForUser(email: string, secret: string): Promise<boolean> {
-  const db = await getDb();
+export async function enableMfaForUser(
+  db: PrismaClient | null,
+  email: string,
+  secret: string,
+): Promise<boolean> {
   if (!db) return false;
 
   const user = await db.user.findUnique({ where: { email } });
@@ -65,8 +67,7 @@ export async function enableMfaForUser(email: string, secret: string): Promise<b
   return true;
 }
 
-export async function ensureDemoUserInDb(): Promise<void> {
-  const db = await getDb();
+export async function ensureDemoUserInDb(db: PrismaClient | null): Promise<void> {
   if (!db) return;
 
   await db.tenant.upsert({
@@ -100,11 +101,12 @@ export async function ensureDemoUserInDb(): Promise<void> {
 }
 
 export async function verifyDbCredentials(
+  db: PrismaClient | null,
   email: string,
   password: string,
   tenantHeader: string,
 ): Promise<DbUserRecord | null> {
-  const record = await findUserForLogin(email, tenantHeader);
+  const record = await findUserForLogin(db, email, tenantHeader);
   if (!record) return null;
   if (!(await verifyPassword(password, record.passwordHash))) return null;
   return record;

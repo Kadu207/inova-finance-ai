@@ -4,6 +4,7 @@ import { signJwt, verifyPassword, hashPassword } from "../auth";
 import { generateTotpSecret, buildTotpUri, verifyTotp } from "../mfa";
 import { requireMfaForRole } from "../rbac";
 import { enableMfaForUser, verifyDbCredentials } from "../db/auth-store";
+import { getDb, resolveConnectionString } from "../db/client";
 import { DEMO_ADMIN_EMAIL } from "../db/seed";
 
 export const authRoutes = new Hono<{ Bindings: Env }>();
@@ -12,7 +13,8 @@ authRoutes.post("/login", async (c) => {
   const body = await c.req.json<{ email: string; password: string; totp?: string }>();
   const tenantId = c.req.header("X-Tenant-Id") ?? "demo-tenant";
 
-  let userRecord = await verifyDbCredentials(body.email, body.password, tenantId);
+  const db = await getDb(resolveConnectionString(c.env));
+  let userRecord = await verifyDbCredentials(db, body.email, body.password, tenantId);
 
   if (!userRecord) {
     const demoKey = `user:${body.email}`;
@@ -86,7 +88,8 @@ authRoutes.post("/mfa/verify", async (c) => {
   const valid = await verifyTotp(pending, body.totp);
   if (!valid) return c.json({ error: "Código inválido" }, 400);
 
-  const enabledInDb = await enableMfaForUser(body.email, pending);
+  const db = await getDb(resolveConnectionString(c.env));
+  const enabledInDb = await enableMfaForUser(db, body.email, pending);
   if (!enabledInDb) {
     const demoKey = `user:${body.email}`;
     const userRecord = (await c.env.SESSIONS.get(demoKey, "json")) as Record<string, unknown> | null;

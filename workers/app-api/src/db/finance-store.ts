@@ -1,5 +1,4 @@
 import type { PrismaClient } from "@inova/db";
-import { getDb } from "./client";
 import { serializePayable, serializeReceivable } from "./seed";
 
 type PayableRecord = ReturnType<typeof serializePayable>;
@@ -12,8 +11,7 @@ function scopedKey(tenantId: string, id: string) {
   return `${tenantId}:${id}`;
 }
 
-export async function listPayables(tenantId: string): Promise<PayableRecord[]> {
-  const db = await getDb();
+export async function listPayables(db: PrismaClient | null, tenantId: string): Promise<PayableRecord[]> {
   if (db) {
     const rows = await db.payable.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } });
     return rows.map(serializePayable);
@@ -24,10 +22,10 @@ export async function listPayables(tenantId: string): Promise<PayableRecord[]> {
 }
 
 export async function createPayable(
+  db: PrismaClient | null,
   tenantId: string,
   input: { supplierName: string; amount: string; dueDate: string; branchId: string; idempotencyKey: string },
 ): Promise<PayableRecord> {
-  const db = await getDb();
   if (db) {
     const existing = await db.payable.findFirst({
       where: { tenantId, idempotencyKey: input.idempotencyKey },
@@ -68,8 +66,7 @@ export async function createPayable(
   return payable;
 }
 
-export async function listReceivables(tenantId: string): Promise<ReceivableRecord[]> {
-  const db = await getDb();
+export async function listReceivables(db: PrismaClient | null, tenantId: string): Promise<ReceivableRecord[]> {
   if (db) {
     const rows = await db.receivable.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } });
     return rows.map(serializeReceivable);
@@ -80,10 +77,10 @@ export async function listReceivables(tenantId: string): Promise<ReceivableRecor
 }
 
 export async function createReceivable(
+  db: PrismaClient | null,
   tenantId: string,
   input: { customerName: string; amount: string; dueDate: string; branchId: string; idempotencyKey: string },
 ): Promise<ReceivableRecord> {
-  const db = await getDb();
   if (db) {
     const existing = await db.receivable.findFirst({
       where: { tenantId, idempotencyKey: input.idempotencyKey },
@@ -119,8 +116,10 @@ export async function createReceivable(
   return receivable;
 }
 
-export async function getCashFlow(tenantId: string): Promise<{ inflow: number; outflow: number; net: number }> {
-  const db = await getDb();
+export async function getCashFlow(
+  db: PrismaClient | null,
+  tenantId: string,
+): Promise<{ inflow: number; outflow: number; net: number }> {
   if (db) {
     const [payables, receivables] = await Promise.all([
       db.payable.findMany({ where: { tenantId, status: "open" }, select: { amount: true } }),
@@ -138,8 +137,7 @@ export async function getCashFlow(tenantId: string): Promise<{ inflow: number; o
   return { inflow, outflow, net: inflow - outflow };
 }
 
-export async function getAgenda(tenantId: string) {
-  const db = await getDb();
+export async function getAgenda(db: PrismaClient | null, tenantId: string) {
   if (db) {
     const [payables, receivables] = await Promise.all([
       db.payable.findMany({ where: { tenantId }, select: { id: true, supplierName: true, dueDate: true } }),
