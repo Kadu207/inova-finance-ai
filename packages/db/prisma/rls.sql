@@ -36,7 +36,8 @@ DECLARE
   t text;
   protected_tables text[] := ARRAY[
     'Payable', 'Receivable', 'BankAccount', 'CashMovement', 'FinanceAgendaItem',
-    'AuditLog', 'OutboxEvent', 'InboxEvent', 'ChatwootLink', 'N8nWorkflow', 'OcrJob'
+    'AuditLog', 'OutboxEvent', 'InboxEvent', 'ChatwootLink', 'N8nWorkflow', 'OcrJob',
+    'BankTransaction', 'ReconciliationMatch', 'ReconciliationSession'
   ];
 BEGIN
   FOREACH t IN ARRAY protected_tables LOOP
