@@ -57,12 +57,24 @@ export const financeDueReminderSchema = baseEventSchema.extend({
   }),
 });
 
+export const reconciliationCompletedSchema = baseEventSchema.extend({
+  eventType: z.literal("ReconciliationCompleted"),
+  payload: z.object({
+    sessionId: z.string(),
+    bankAccountId: z.string(),
+    total: z.number(),
+    matched: z.number(),
+    unmatched: z.number(),
+  }),
+});
+
 export const eventSchemas = {
   PayableCreated: payableCreatedSchema,
   ReceivableCreated: receivableCreatedSchema,
   CustomerMessageReceived: customerMessageReceivedSchema,
   OcrJobCompleted: ocrJobCompletedSchema,
   FinanceDueReminder: financeDueReminderSchema,
+  ReconciliationCompleted: reconciliationCompletedSchema,
 } as const;
 
 export type EventType = keyof typeof eventSchemas;

@@ -8,6 +8,7 @@ import { healthRoutes } from "./routes/health";
 import { integrationRoutes } from "./routes/integrations";
 import { lgpdRoutes } from "./routes/lgpd";
 import { assistantRoutes } from "./routes/assistant";
+import { reconciliationRoutes } from "./routes/reconciliation";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -27,6 +28,7 @@ app.route("/api/finance", financeRoutes);
 app.route("/api/integrations", integrationRoutes);
 app.route("/api/lgpd", lgpdRoutes);
 app.route("/api/assistant", assistantRoutes);
+app.route("/api/reconciliation", reconciliationRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 app.onError((err, c) => {

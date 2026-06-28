@@ -16,15 +16,18 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branches      Branch[]
-  userTenants   UserTenant[]
-  payables      Payable[]
-  receivables   Receivable[]
-  bankAccounts  BankAccount[]
-  auditLogs     AuditLog[]
-  outboxEvents  OutboxEvent[]
-  chatwootLinks ChatwootLink[]
-  ocrJobs       OcrJob[]
+  branches               Branch[]
+  userTenants            UserTenant[]
+  payables               Payable[]
+  receivables            Receivable[]
+  bankAccounts           BankAccount[]
+  auditLogs              AuditLog[]
+  outboxEvents           OutboxEvent[]
+  chatwootLinks          ChatwootLink[]
+  ocrJobs                OcrJob[]
+  bankTransactions       BankTransaction[]
+  reconciliationMatches  ReconciliationMatch[]
+  reconciliationSessions ReconciliationSession[]
 
   @@index([slug])
 }
@@ -291,4 +294,80 @@ model OcrJob {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, status])
+}
+
+enum BankTransactionType {
+  debit
+  credit
+}
+
+enum BankTransactionStatus {
+  unmatched
+  matched
+}
+
+model BankTransaction {
+  id          String                @id @default(cuid())
+  tenantId    String
+  bankAccountId String
+  fitid       String
+  amount      Decimal               @db.Decimal(18, 2)
+  type        BankTransactionType
+  postedAt    DateTime
+  description String
+  status      BankTransactionStatus @default(unmatched)
+  createdAt   DateTime              @default(now())
+
+  tenant  Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  matches ReconciliationMatch[]
+
+  @@unique([tenantId, fitid])
+  @@index([tenantId, status])
+}
+
+enum ReconciliationMatchOrigin {
+  auto
+  ai
+  manual
+}
+
+enum ReconciliationMatchStatus {
+  suggested
+  confirmed
+  rejected
+}
+
+model ReconciliationMatch {
+  id                String                    @id @default(cuid())
+  tenantId          String
+  bankTransactionId String
+  resourceType      String
+  resourceId        String
+  origin            ReconciliationMatchOrigin @default(auto)
+  status            ReconciliationMatchStatus @default(confirmed)
+  confidence        Float?
+  reason            String?
+  actorId           String?
+  createdAt         DateTime                  @default(now())
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bankTransaction BankTransaction @relation(fields: [bankTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+}
+
+model ReconciliationSession {
+  id            String   @id @default(cuid())
+  tenantId      String
+  bankAccountId String
+  fileName      String?
+  total         Int      @default(0)
+  matched       Int      @default(0)
+  unmatched     Int      @default(0)
+  correlationId String
+  createdAt     DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
 }
