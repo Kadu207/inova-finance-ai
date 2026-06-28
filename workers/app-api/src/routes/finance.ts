@@ -5,6 +5,7 @@ import type { Env, TenantContext, AuthUser } from "../types";
 import { verifyJwt } from "../auth";
 import { hasPermission } from "../rbac";
 import { getDb, resolveConnectionString } from "../db/client";
+import { writeAuditLog } from "../db/audit-store";
 import {
   listPayables,
   createPayable,
@@ -83,6 +84,14 @@ financeRoutes.post("/payables", async (c) => {
   );
   await c.env.EVENTS_QUEUE.send(event);
 
+  await writeAuditLog(c.get("db"), {
+    tenantId: tenant.tenantId,
+    actorId: user.userId,
+    action: "payable.created",
+    resource: payable.id,
+    payload: { amount: body.amount, dueDate: body.dueDate },
+  }).catch((e) => console.error(JSON.stringify({ level: "error", message: "audit.write_failed", detail: String(e) })));
+
   return c.json({ data: payable }, 201);
 });
 
@@ -121,6 +130,14 @@ financeRoutes.post("/receivables", async (c) => {
     { receivableId: receivable.id, amount: body.amount, dueDate: body.dueDate },
   );
   await c.env.EVENTS_QUEUE.send(event);
+
+  await writeAuditLog(c.get("db"), {
+    tenantId: tenant.tenantId,
+    actorId: user.userId,
+    action: "receivable.created",
+    resource: receivable.id,
+    payload: { amount: body.amount, dueDate: body.dueDate },
+  }).catch((e) => console.error(JSON.stringify({ level: "error", message: "audit.write_failed", detail: String(e) })));
 
   return c.json({ data: receivable }, 201);
 });

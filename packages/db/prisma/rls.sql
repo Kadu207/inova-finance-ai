@@ -28,6 +28,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO inova_app
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO inova_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO inova_app;
 
+-- AuditLog é APPEND-ONLY (imutável): a app pode inserir e ler, nunca alterar/apagar.
+REVOKE UPDATE, DELETE ON "AuditLog" FROM inova_app;
+
 DO $$
 DECLARE
   t text;
