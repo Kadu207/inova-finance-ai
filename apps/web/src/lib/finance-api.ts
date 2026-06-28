@@ -21,7 +21,7 @@ export type ApiReceivable = {
   customerName: string;
   amount: string;
   dueDate: string;
-  status: "open" | "received" | "cancelled";
+  status: "open" | "paid" | "cancelled";
   idempotencyKey?: string | null;
   createdAt: string;
 };
@@ -52,8 +52,8 @@ export function payableStatusUi(status: ApiPayable["status"], dueDate: string): 
   return due < new Date(new Date().toDateString()) ? "overdue" : "open";
 }
 
-export function receivableStatusUi(status: ApiReceivable["status"], dueDate: string): "open" | "received" | "overdue" {
-  if (status === "received") return "received";
+export function receivableStatusUi(status: ApiReceivable["status"], dueDate: string): "open" | "paid" | "overdue" {
+  if (status === "paid") return "paid";
   if (status === "cancelled") return "open";
   const due = new Date(dueDate.slice(0, 10));
   return due < new Date(new Date().toDateString()) ? "overdue" : "open";

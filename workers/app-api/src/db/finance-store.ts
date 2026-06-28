@@ -11,6 +11,16 @@ function scopedKey(tenantId: string, id: string) {
   return `${tenantId}:${id}`;
 }
 
+/** Detecta violação de unique constraint do Prisma (P2002) — usado na idempotência (B4). */
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: string }).code === "P2002";
+}
+
+/** Arredonda para centavos, evitando artefato de ponto flutuante na resposta (B2). */
+function roundMoney(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 export async function listPayables(db: PrismaClient | null, tenantId: string): Promise<PayableRecord[]> {
   if (db) {
     const rows = await db.payable.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } });
@@ -32,17 +42,26 @@ export async function createPayable(
     });
     if (existing) return serializePayable(existing);
 
-    const row = await db.payable.create({
-      data: {
-        tenantId,
-        branchId: input.branchId,
-        supplierName: input.supplierName,
-        amount: input.amount,
-        dueDate: new Date(input.dueDate),
-        idempotencyKey: input.idempotencyKey,
-      },
-    });
-    return serializePayable(row);
+    try {
+      const row = await db.payable.create({
+        data: {
+          tenantId,
+          branchId: input.branchId,
+          supplierName: input.supplierName,
+          amount: input.amount,
+          dueDate: new Date(input.dueDate),
+          idempotencyKey: input.idempotencyKey,
+        },
+      });
+      return serializePayable(row);
+    } catch (error) {
+      // B4 — corrida: requisição concorrente com a mesma idempotencyKey já inseriu.
+      if (isUniqueViolation(error)) {
+        const row = await db.payable.findFirst({ where: { tenantId, idempotencyKey: input.idempotencyKey } });
+        if (row) return serializePayable(row);
+      }
+      throw error;
+    }
   }
 
   const existingMem = [...payablesMemory.values()].find(
@@ -87,17 +106,26 @@ export async function createReceivable(
     });
     if (existing) return serializeReceivable(existing);
 
-    const row = await db.receivable.create({
-      data: {
-        tenantId,
-        branchId: input.branchId,
-        customerName: input.customerName,
-        amount: input.amount,
-        dueDate: new Date(input.dueDate),
-        idempotencyKey: input.idempotencyKey,
-      },
-    });
-    return serializeReceivable(row);
+    try {
+      const row = await db.receivable.create({
+        data: {
+          tenantId,
+          branchId: input.branchId,
+          customerName: input.customerName,
+          amount: input.amount,
+          dueDate: new Date(input.dueDate),
+          idempotencyKey: input.idempotencyKey,
+        },
+      });
+      return serializeReceivable(row);
+    } catch (error) {
+      // B4 — corrida: requisição concorrente com a mesma idempotencyKey já inseriu.
+      if (isUniqueViolation(error)) {
+        const row = await db.receivable.findFirst({ where: { tenantId, idempotencyKey: input.idempotencyKey } });
+        if (row) return serializeReceivable(row);
+      }
+      throw error;
+    }
   }
 
   const id = crypto.randomUUID();
@@ -121,20 +149,22 @@ export async function getCashFlow(
   tenantId: string,
 ): Promise<{ inflow: number; outflow: number; net: number }> {
   if (db) {
-    const [payables, receivables] = await Promise.all([
-      db.payable.findMany({ where: { tenantId, status: "open" }, select: { amount: true } }),
-      db.receivable.findMany({ where: { tenantId, status: "open" }, select: { amount: true } }),
+    // B2 — soma feita no banco em Decimal (exato); converte para number uma única
+    // vez, evitando acúmulo de erro de ponto flutuante sobre muitos registros.
+    const [payAgg, recAgg] = await Promise.all([
+      db.payable.aggregate({ _sum: { amount: true }, where: { tenantId, status: "open" } }),
+      db.receivable.aggregate({ _sum: { amount: true }, where: { tenantId, status: "open" } }),
     ]);
-    const outflow = payables.reduce((s, p) => s + Number(p.amount), 0);
-    const inflow = receivables.reduce((s, r) => s + Number(r.amount), 0);
-    return { inflow, outflow, net: inflow - outflow };
+    const outflow = Number(payAgg._sum.amount ?? 0);
+    const inflow = Number(recAgg._sum.amount ?? 0);
+    return { inflow: roundMoney(inflow), outflow: roundMoney(outflow), net: roundMoney(inflow - outflow) };
   }
 
   const payables = [...payablesMemory.values()].filter((p) => p.tenantId === tenantId && p.status === "open");
   const receivables = [...receivablesMemory.values()].filter((r) => r.tenantId === tenantId && r.status === "open");
   const outflow = payables.reduce((s, p) => s + parseFloat(p.amount), 0);
   const inflow = receivables.reduce((s, r) => s + parseFloat(r.amount), 0);
-  return { inflow, outflow, net: inflow - outflow };
+  return { inflow: roundMoney(inflow), outflow: roundMoney(outflow), net: roundMoney(inflow - outflow) };
 }
 
 export async function getAgenda(db: PrismaClient | null, tenantId: string) {

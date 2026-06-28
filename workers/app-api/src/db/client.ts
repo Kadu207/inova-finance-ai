@@ -22,26 +22,30 @@ export function resolveConnectionString(env: Env): string | null {
  * permitindo reconexão em requisições futuras.
  */
 export async function getDb(connectionString: string | null): Promise<PrismaClient | null> {
+  // Sem connection string configurada → stores em memória (dev/test).
   if (!connectionString) return null;
   const cached = clients.get(connectionString);
   if (cached) return cached;
 
+  const { createPrismaClient } = await import("@inova/db");
+  const client = createPrismaClient(connectionString);
   try {
-    const { createPrismaClient } = await import("@inova/db");
-    const client = createPrismaClient(connectionString);
     await client.$queryRaw`SELECT 1`;
-    clients.set(connectionString, client);
-    return client;
   } catch (error) {
-    console.warn(
+    // B3 — com banco configurado, uma falha de conexão NÃO cai silenciosamente
+    // para in-memory (perderia escritas financeiras). Propaga → 500 explícito.
+    await client.$disconnect().catch(() => {});
+    console.error(
       JSON.stringify({
-        level: "warn",
-        message: "PostgreSQL indisponível; usando stores em memória",
+        level: "error",
+        message: "Falha ao conectar no PostgreSQL configurado",
         detail: error instanceof Error ? error.message : String(error),
       }),
     );
-    return null;
+    throw error;
   }
+  clients.set(connectionString, client);
+  return client;
 }
 
 export function resetDbCacheForTests(): void {

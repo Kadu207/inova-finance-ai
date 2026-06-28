@@ -1,6 +1,35 @@
 import type { AuthUser } from "./types";
 
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+/** Comparação de strings em tempo constante (B6 — evita timing attack). */
+export function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/** base64url (B5 — JWT compatível com RFC 7515, URL-safe e sem padding). */
+function base64UrlEncode(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64UrlEncodeString(value: string): string {
+  return base64UrlEncode(encoder.encode(value));
+}
+
+function base64UrlDecodeToBytes(input: string): Uint8Array {
+  const b64 = input.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (input.length % 4)) % 4);
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+function base64UrlDecodeToString(input: string): string {
+  return decoder.decode(base64UrlDecodeToBytes(input));
+}
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -26,12 +55,12 @@ export async function verifyPassword(password: string, stored: string): Promise<
     256,
   );
   const hash = btoa(String.fromCharCode(...new Uint8Array(bits)));
-  return hash === expectedHash;
+  return timingSafeEqual(hash, expectedHash);
 }
 
 export async function signJwt(user: AuthUser, secret: string, expiresInSec = 3600): Promise<string> {
-  const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(
+  const header = base64UrlEncodeString(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const payload = base64UrlEncodeString(
     JSON.stringify({
       sub: user.userId,
       email: user.email,
@@ -44,7 +73,7 @@ export async function signJwt(user: AuthUser, secret: string, expiresInSec = 360
   const data = `${header}.${payload}`;
   const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(data));
-  const signature = btoa(String.fromCharCode(...new Uint8Array(sig)));
+  const signature = base64UrlEncode(new Uint8Array(sig));
   return `${data}.${signature}`;
 }
 
@@ -52,12 +81,28 @@ export async function verifyJwt(token: string, secret: string): Promise<AuthUser
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   const [header, payload, signature] = parts as [string, string, string];
+
+  // B5 — valida o algoritmo declarado no header (defesa contra "alg confusion").
+  let head: { alg?: string; typ?: string };
+  try {
+    head = JSON.parse(base64UrlDecodeToString(header)) as { alg?: string; typ?: string };
+  } catch {
+    return null;
+  }
+  if (head.alg !== "HS256") return null;
+
   const data = `${header}.${payload}`;
   const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
-  const sigBytes = Uint8Array.from(atob(signature), (c) => c.charCodeAt(0));
+  let sigBytes: Uint8Array;
+  try {
+    sigBytes = base64UrlDecodeToBytes(signature);
+  } catch {
+    return null;
+  }
   const valid = await crypto.subtle.verify("HMAC", key, sigBytes, encoder.encode(data));
   if (!valid) return null;
-  const decoded = JSON.parse(atob(payload)) as {
+
+  let decoded: {
     sub: string;
     email: string;
     tenantId: string;
@@ -65,6 +110,11 @@ export async function verifyJwt(token: string, secret: string): Promise<AuthUser
     branchIds: string[];
     exp: number;
   };
+  try {
+    decoded = JSON.parse(base64UrlDecodeToString(payload));
+  } catch {
+    return null;
+  }
   if (decoded.exp < Math.floor(Date.now() / 1000)) return null;
   return {
     userId: decoded.sub,
