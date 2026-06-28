@@ -73,6 +73,28 @@ jobs:
       - run: pnpm --filter @inova/messaging build
       - run: pnpm --filter @inova/agents-runtime build
 
+  sonarcloud:
+    runs-on: ubuntu-latest
+    # Análise SonarCloud via CI. Gated no segredo SONAR_TOKEN: se não estiver
+    # configurado, o job apenas avisa e fica VERDE (não quebra o CI).
+    # Requer DESLIGAR o "Automatic Analysis" no dashboard. Ver docs/SONARCLOUD.md.
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Aviso se SONAR_TOKEN ausente
+        if: ${{ env.SONAR_TOKEN == '' }}
+        run: echo "::notice::SONAR_TOKEN nao configurado — analise SonarCloud pulada. Veja docs/SONARCLOUD.md."
+      - uses: actions/checkout@v4
+        if: ${{ env.SONAR_TOKEN != '' }}
+        with:
+          fetch-depth: 0
+      - name: SonarCloud Scan
+        if: ${{ env.SONAR_TOKEN != '' }}
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+
   deploy-preview:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
