@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@inova/db";
+import { withTenantScope } from "./client";
 import { serializePayable, serializeReceivable } from "./seed";
 
 type PayableRecord = ReturnType<typeof serializePayable>;
@@ -21,10 +22,16 @@ function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// Toda query de banco roda via withTenantScope: a RLS no Postgres garante o
+// isolamento por tenant no nível do banco (defense-in-depth do C1), além do
+// filtro de aplicação `where: { tenantId }`.
+
 export async function listPayables(db: PrismaClient | null, tenantId: string): Promise<PayableRecord[]> {
   if (db) {
-    const rows = await db.payable.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } });
-    return rows.map(serializePayable);
+    return withTenantScope(db, tenantId, async (tx) => {
+      const rows = await tx.payable.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } });
+      return rows.map(serializePayable);
+    });
   }
   return [...payablesMemory.entries()]
     .filter(([k]) => k.startsWith(`${tenantId}:`))
@@ -37,28 +44,30 @@ export async function createPayable(
   input: { supplierName: string; amount: string; dueDate: string; branchId: string; idempotencyKey: string },
 ): Promise<PayableRecord> {
   if (db) {
-    const existing = await db.payable.findFirst({
-      where: { tenantId, idempotencyKey: input.idempotencyKey },
-    });
-    if (existing) return serializePayable(existing);
-
     try {
-      const row = await db.payable.create({
-        data: {
-          tenantId,
-          branchId: input.branchId,
-          supplierName: input.supplierName,
-          amount: input.amount,
-          dueDate: new Date(input.dueDate),
-          idempotencyKey: input.idempotencyKey,
-        },
+      return await withTenantScope(db, tenantId, async (tx) => {
+        const existing = await tx.payable.findFirst({ where: { tenantId, idempotencyKey: input.idempotencyKey } });
+        if (existing) return serializePayable(existing);
+        const row = await tx.payable.create({
+          data: {
+            tenantId,
+            branchId: input.branchId,
+            supplierName: input.supplierName,
+            amount: input.amount,
+            dueDate: new Date(input.dueDate),
+            idempotencyKey: input.idempotencyKey,
+          },
+        });
+        return serializePayable(row);
       });
-      return serializePayable(row);
     } catch (error) {
       // B4 — corrida: requisição concorrente com a mesma idempotencyKey já inseriu.
       if (isUniqueViolation(error)) {
-        const row = await db.payable.findFirst({ where: { tenantId, idempotencyKey: input.idempotencyKey } });
-        if (row) return serializePayable(row);
+        return withTenantScope(db, tenantId, async (tx) => {
+          const row = await tx.payable.findFirst({ where: { tenantId, idempotencyKey: input.idempotencyKey } });
+          if (row) return serializePayable(row);
+          throw error;
+        });
       }
       throw error;
     }
@@ -87,8 +96,10 @@ export async function createPayable(
 
 export async function listReceivables(db: PrismaClient | null, tenantId: string): Promise<ReceivableRecord[]> {
   if (db) {
-    const rows = await db.receivable.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } });
-    return rows.map(serializeReceivable);
+    return withTenantScope(db, tenantId, async (tx) => {
+      const rows = await tx.receivable.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } });
+      return rows.map(serializeReceivable);
+    });
   }
   return [...receivablesMemory.entries()]
     .filter(([k]) => k.startsWith(`${tenantId}:`))
@@ -101,28 +112,30 @@ export async function createReceivable(
   input: { customerName: string; amount: string; dueDate: string; branchId: string; idempotencyKey: string },
 ): Promise<ReceivableRecord> {
   if (db) {
-    const existing = await db.receivable.findFirst({
-      where: { tenantId, idempotencyKey: input.idempotencyKey },
-    });
-    if (existing) return serializeReceivable(existing);
-
     try {
-      const row = await db.receivable.create({
-        data: {
-          tenantId,
-          branchId: input.branchId,
-          customerName: input.customerName,
-          amount: input.amount,
-          dueDate: new Date(input.dueDate),
-          idempotencyKey: input.idempotencyKey,
-        },
+      return await withTenantScope(db, tenantId, async (tx) => {
+        const existing = await tx.receivable.findFirst({ where: { tenantId, idempotencyKey: input.idempotencyKey } });
+        if (existing) return serializeReceivable(existing);
+        const row = await tx.receivable.create({
+          data: {
+            tenantId,
+            branchId: input.branchId,
+            customerName: input.customerName,
+            amount: input.amount,
+            dueDate: new Date(input.dueDate),
+            idempotencyKey: input.idempotencyKey,
+          },
+        });
+        return serializeReceivable(row);
       });
-      return serializeReceivable(row);
     } catch (error) {
       // B4 — corrida: requisição concorrente com a mesma idempotencyKey já inseriu.
       if (isUniqueViolation(error)) {
-        const row = await db.receivable.findFirst({ where: { tenantId, idempotencyKey: input.idempotencyKey } });
-        if (row) return serializeReceivable(row);
+        return withTenantScope(db, tenantId, async (tx) => {
+          const row = await tx.receivable.findFirst({ where: { tenantId, idempotencyKey: input.idempotencyKey } });
+          if (row) return serializeReceivable(row);
+          throw error;
+        });
       }
       throw error;
     }
@@ -149,15 +162,15 @@ export async function getCashFlow(
   tenantId: string,
 ): Promise<{ inflow: number; outflow: number; net: number }> {
   if (db) {
-    // B2 — soma feita no banco em Decimal (exato); converte para number uma única
-    // vez, evitando acúmulo de erro de ponto flutuante sobre muitos registros.
-    const [payAgg, recAgg] = await Promise.all([
-      db.payable.aggregate({ _sum: { amount: true }, where: { tenantId, status: "open" } }),
-      db.receivable.aggregate({ _sum: { amount: true }, where: { tenantId, status: "open" } }),
-    ]);
-    const outflow = Number(payAgg._sum.amount ?? 0);
-    const inflow = Number(recAgg._sum.amount ?? 0);
-    return { inflow: roundMoney(inflow), outflow: roundMoney(outflow), net: roundMoney(inflow - outflow) };
+    return withTenantScope(db, tenantId, async (tx) => {
+      // B2 — soma feita no banco em Decimal (exato); converte para number uma única
+      // vez, evitando acúmulo de erro de ponto flutuante sobre muitos registros.
+      const payAgg = await tx.payable.aggregate({ _sum: { amount: true }, where: { tenantId, status: "open" } });
+      const recAgg = await tx.receivable.aggregate({ _sum: { amount: true }, where: { tenantId, status: "open" } });
+      const outflow = Number(payAgg._sum.amount ?? 0);
+      const inflow = Number(recAgg._sum.amount ?? 0);
+      return { inflow: roundMoney(inflow), outflow: roundMoney(outflow), net: roundMoney(inflow - outflow) };
+    });
   }
 
   const payables = [...payablesMemory.values()].filter((p) => p.tenantId === tenantId && p.status === "open");
@@ -169,24 +182,24 @@ export async function getCashFlow(
 
 export async function getAgenda(db: PrismaClient | null, tenantId: string) {
   if (db) {
-    const [payables, receivables] = await Promise.all([
-      db.payable.findMany({ where: { tenantId }, select: { id: true, supplierName: true, dueDate: true } }),
-      db.receivable.findMany({ where: { tenantId }, select: { id: true, customerName: true, dueDate: true } }),
-    ]);
-    return [
-      ...payables.map((p) => ({
-        type: "payable" as const,
-        id: p.id,
-        title: p.supplierName,
-        dueDate: p.dueDate.toISOString().slice(0, 10),
-      })),
-      ...receivables.map((r) => ({
-        type: "receivable" as const,
-        id: r.id,
-        title: r.customerName,
-        dueDate: r.dueDate.toISOString().slice(0, 10),
-      })),
-    ];
+    return withTenantScope(db, tenantId, async (tx) => {
+      const payables = await tx.payable.findMany({ where: { tenantId }, select: { id: true, supplierName: true, dueDate: true } });
+      const receivables = await tx.receivable.findMany({ where: { tenantId }, select: { id: true, customerName: true, dueDate: true } });
+      return [
+        ...payables.map((p) => ({
+          type: "payable" as const,
+          id: p.id,
+          title: p.supplierName,
+          dueDate: p.dueDate.toISOString().slice(0, 10),
+        })),
+        ...receivables.map((r) => ({
+          type: "receivable" as const,
+          id: r.id,
+          title: r.customerName,
+          dueDate: r.dueDate.toISOString().slice(0, 10),
+        })),
+      ];
+    });
   }
 
   return [
