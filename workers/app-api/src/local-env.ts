@@ -43,5 +43,6 @@ export function createLocalEnv(): Env {
         console.log(JSON.stringify({ level: "info", event: "queue.send", body }));
       },
     } as unknown as Queue,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   };
 }

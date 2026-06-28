@@ -7,6 +7,7 @@ import { financeRoutes } from "./routes/finance";
 import { healthRoutes } from "./routes/health";
 import { integrationRoutes } from "./routes/integrations";
 import { lgpdRoutes } from "./routes/lgpd";
+import { assistantRoutes } from "./routes/assistant";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -25,6 +26,7 @@ app.use("/api/*", requireTenantContext());
 app.route("/api/finance", financeRoutes);
 app.route("/api/integrations", integrationRoutes);
 app.route("/api/lgpd", lgpdRoutes);
+app.route("/api/assistant", assistantRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 app.onError((err, c) => {

@@ -6,6 +6,8 @@ export interface Env {
   SESSIONS: KVNamespace;
   MESSAGING: Fetcher;
   EVENTS_QUEUE: Queue;
+  /** Opcional — habilita o LLM do assistente (OpenRouter). Sem ele, respostas determinísticas. */
+  OPENROUTER_API_KEY?: string;
 }
 
 export interface TenantContext {
