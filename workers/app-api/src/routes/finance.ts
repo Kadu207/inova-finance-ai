@@ -66,6 +66,7 @@ financeRoutes.post("/payables", async (c) => {
     amount: string;
     dueDate: string;
     branchId: string;
+    costCenterId?: string;
   }>();
   const idempotencyKey = c.req.header("X-Idempotency-Key") ?? crypto.randomUUID();
 
@@ -74,6 +75,7 @@ financeRoutes.post("/payables", async (c) => {
     amount: body.amount,
     dueDate: body.dueDate,
     branchId: body.branchId,
+    costCenterId: body.costCenterId,
     idempotencyKey,
   });
 
@@ -113,6 +115,7 @@ financeRoutes.post("/receivables", async (c) => {
     amount: string;
     dueDate: string;
     branchId: string;
+    costCenterId?: string;
   }>();
   const idempotencyKey = c.req.header("X-Idempotency-Key") ?? crypto.randomUUID();
 
@@ -121,6 +124,7 @@ financeRoutes.post("/receivables", async (c) => {
     amount: body.amount,
     dueDate: body.dueDate,
     branchId: body.branchId,
+    costCenterId: body.costCenterId,
     idempotencyKey,
   });
 

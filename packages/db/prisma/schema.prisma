@@ -30,6 +30,7 @@ model Tenant {
   reconciliationSessions ReconciliationSession[]
   charges                Charge[]
   invoices               Invoice[]
+  costCenters            CostCenter[]
 
   @@index([slug])
 }
@@ -129,6 +130,7 @@ model Payable {
   amount         Decimal       @db.Decimal(18, 2)
   dueDate        DateTime
   status         PayableStatus @default(open)
+  costCenterId   String?
   idempotencyKey String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -149,6 +151,7 @@ model Receivable {
   amount         Decimal          @db.Decimal(18, 2)
   dueDate        DateTime
   status         ReceivableStatus @default(open)
+  costCenterId   String?
   idempotencyKey String?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
@@ -433,4 +436,19 @@ model Invoice {
 
   @@index([tenantId, status])
   @@index([tenantId, providerId])
+}
+
+model CostCenter {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  code      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
 }

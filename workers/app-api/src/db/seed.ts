@@ -15,6 +15,7 @@ export function serializePayable(row: Payable) {
     amount: row.amount.toString(),
     dueDate: row.dueDate.toISOString().slice(0, 10),
     status: row.status,
+    costCenterId: row.costCenterId ?? null,
     idempotencyKey: row.idempotencyKey,
     createdAt: row.createdAt.toISOString(),
   };
@@ -29,6 +30,7 @@ export function serializeReceivable(row: Receivable) {
     amount: row.amount.toString(),
     dueDate: row.dueDate.toISOString().slice(0, 10),
     status: row.status,
+    costCenterId: row.costCenterId ?? null,
     idempotencyKey: row.idempotencyKey,
     createdAt: row.createdAt.toISOString(),
   };
