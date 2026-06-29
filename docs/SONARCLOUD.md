@@ -24,8 +24,17 @@ Analysis. O job é *gated*: sem o segredo `SONAR_TOKEN` ele só avisa e fica **v
 ### 3) DESLIGAR a Automatic Analysis (crítico)
 > Sem isso, o SonarCloud recusa a análise via CI ("you are running CI analysis while Automatic Analysis is enabled") e o check continua falhando.
 
-1. SonarCloud → projeto **inova-finance-ai** → **Administration** → **Analysis Method**.
-2. **Desative** "Automatic Analysis" (deixe ativado apenas "CI-based analysis" / "with GitHub Actions").
+> ⚠️ **PROJETO CERTO — a pegadinha que já custou horas.** A org `kadu207` tem MAIS DE UM
+> projeto (confirmado: `Kadu207_inova-finance-ai` **e** `Kadu207_saas-acme-erp-financeiro`,
+> entre outros). Desligar o Automatic Analysis no projeto errado **NÃO tem efeito** sobre o
+> CI. O CI analisa **a key de [`sonar-project.properties`](../sonar-project.properties) →
+> `sonar.projectKey`**, hoje **`Kadu207_inova-finance-ai`**. Antes de desligar, confirme que
+> você está NESSE projeto: olhe o `id=` na URL, ou **Administration → Project Information → Key**.
+
+1. Vá direto à página certa: **https://sonarcloud.io/project/analysis_method?id=Kadu207_inova-finance-ai**
+   (ou: org `kadu207` → abra o projeto cuja **Key** é `Kadu207_inova-finance-ai` → **Administration → Analysis Method**).
+2. **Desative** "Automatic Analysis" (deixe só "CI-based analysis" / "with GitHub Actions"). **Salve.**
+3. Recarregue e confirme que ficou **Off** nesse projeto específico.
 
 ### 4) Conferir a organização
 - Em [`sonar-project.properties`](../sonar-project.properties), `sonar.organization` está como `kadu207`.
@@ -35,7 +44,36 @@ Analysis. O job é *gated*: sem o segredo `SONAR_TOKEN` ele só avisa e fica **v
 - Abra um PR (ou faça um push) — o job **`sonarcloud`** roda o scan e publica o resultado no PR.
 - Sem `SONAR_TOKEN`, o job fica **verde** com um aviso (não quebra o CI).
 
+### 6) Depois que o gate ficar verde (tornar bloqueante)
+Quando o job `sonarcloud` rodar limpo em 1–2 PRs, dá para deixar o Sonar bloquear merge:
+1. Remover o `continue-on-error` do step "SonarCloud Scan" em [`ci.yml`](../.github/workflows/ci.yml).
+2. Adicionar os checks à branch protection da `main`:
+   ```bash
+   gh api -X POST repos/Kadu207/inova-finance-ai/branches/main/protection/required_status_checks/contexts \
+     --input - <<'JSON'
+   ["sonarcloud", "SonarCloud Code Analysis"]
+   JSON
+   ```
+
+## Troubleshooting
+
+**`ERROR You are running CI analysis while Automatic Analysis is enabled` (exit 3)** — o
+Automatic Analysis ainda está LIGADO no projeto que o CI alimenta. 99% das vezes é o erro
+de **projeto errado** (ver o aviso do passo 3): você desligou em `saas-acme-erp-financeiro`,
+mas o CI usa `Kadu207_inova-finance-ai`. Desligue no projeto cuja Key == `sonar.projectKey`.
+
+**Por que isto pode travar TODOS os merges** — se os checks `sonarcloud` /
+`SonarCloud Code Analysis` forem obrigatórios na `main` (passo 6) enquanto o scan falha,
+eles ficam vermelhos em todo PR e o GitHub bloqueia o merge. Por isso só torne bloqueante
+DEPOIS de ver o gate verde de forma consistente.
+
 ## Alternativa: só silenciar (se não quiser análise agora)
-Como o check **não bloqueia** merges (PRs ficam `UNSTABLE`, não `BLOCKED`), você pode
-simplesmente ignorá-lo, ou removê-lo na branch protection:
-**Settings → Branches → regra do `main` → Status checks** → remova "SonarCloud Code Analysis".
+Enquanto não estiver nos checks obrigatórios, o Sonar **não bloqueia** merges. Você pode
+ignorá-lo, ou (se já estiver obrigatório) removê-lo:
+```bash
+# remover só os checks do Sonar da lista de obrigatórios:
+gh api repos/Kadu207/inova-finance-ai/branches/main/protection/required_status_checks/contexts \
+  -X PUT --input - <<'JSON'
+["rls-isolation", "lint-typecheck", "test-js", "test-python", "contract-tests", "wrangler-dry-run"]
+JSON
+```
