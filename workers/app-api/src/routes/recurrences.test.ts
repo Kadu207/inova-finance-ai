@@ -5,7 +5,7 @@ import { signJwt } from "../auth";
 import { createLocalEnv } from "../local-env";
 import { resetDbCacheForTests } from "../db/client";
 import { __memoryStoresForTests } from "../db/finance-store";
-import { __recurrencesMemoryForTests } from "../db/recurrences-store";
+import { __recurrencesMemoryForTests, runRecurrencesAllTenants } from "../db/recurrences-store";
 
 const env: Env = createLocalEnv();
 
@@ -71,5 +71,28 @@ describe("Recorrências (títulos recorrentes mensais)", () => {
     const viewer = await tokenFor("ra", "viewer");
     const res = await call("POST", "/api/recurrences", viewer, "ra", { type: "payable", name: "A", amount: "1.00", dayOfMonth: 5, branchId: "branch_main" });
     expect(res.status).toBe(403);
+  });
+
+  it("cron multi-tenant: gera para todos os tenants e é idempotente", async () => {
+    // duas recorrências em tenants distintos
+    const ta = await tokenFor("ta");
+    const tb = await tokenFor("tb");
+    await call("POST", "/api/recurrences", ta, "ta", { type: "payable", name: "Aluguel A", amount: "100.00", dayOfMonth: 5, branchId: "branch_main" });
+    await call("POST", "/api/recurrences", tb, "tb", { type: "receivable", name: "Mensalidade B", amount: "200.00", dayOfMonth: 5, branchId: "branch_main" });
+
+    const r1 = await runRecurrencesAllTenants(null, "2026-09");
+    expect(r1.tenants).toBe(2);
+    expect(r1.processed).toBe(2);
+    expect(r1.failed).toBe(0);
+
+    const paysA = (await (await call("GET", "/api/finance/payables", ta, "ta")).json()) as { data: unknown[] };
+    const recvB = (await (await call("GET", "/api/finance/receivables", tb, "tb")).json()) as { data: unknown[] };
+    expect(paysA.data).toHaveLength(1);
+    expect(recvB.data).toHaveLength(1);
+
+    // reexecução não duplica
+    await runRecurrencesAllTenants(null, "2026-09");
+    const paysA2 = (await (await call("GET", "/api/finance/payables", ta, "ta")).json()) as { data: unknown[] };
+    expect(paysA2.data).toHaveLength(1);
   });
 });

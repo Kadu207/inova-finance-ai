@@ -116,6 +116,41 @@ export async function runRecurrences(db: PrismaClient | null, tenantId: string, 
   return { processed: recs.length };
 }
 
+/**
+ * Lista os IDs de todos os tenants. Tenant NÃO é RLS-protegido (tabela de identidade),
+ * então a consulta é direta, sem `withTenantScope`. Em memória, deriva dos recMemory.
+ */
+async function listAllTenantIds(db: PrismaClient | null): Promise<string[]> {
+  if (db) {
+    const rows = await db.tenant.findMany({ select: { id: true } });
+    return rows.map((r) => r.id);
+  }
+  return [...new Set([...recMemory.values()].map((r) => r.tenantId))];
+}
+
+/**
+ * Roda as recorrências do mês para TODOS os tenants (usado pelo cron mensal). Idempotente
+ * por tenant. Falha de um tenant não interrompe os demais (é registrada e seguimos).
+ */
+export async function runRecurrencesAllTenants(
+  db: PrismaClient | null,
+  month: string,
+): Promise<{ tenants: number; processed: number; failed: number }> {
+  const tenantIds = await listAllTenantIds(db);
+  let processed = 0;
+  let failed = 0;
+  for (const tenantId of tenantIds) {
+    try {
+      const r = await runRecurrences(db, tenantId, month);
+      processed += r.processed;
+    } catch (err) {
+      failed++;
+      console.error(JSON.stringify({ level: "error", event: "recurrence.cron.tenant_failed", tenantId, month, message: (err as Error).message }));
+    }
+  }
+  return { tenants: tenantIds.length, processed, failed };
+}
+
 /** @internal test hook */
 export function __recurrencesMemoryForTests() {
   return { recMemory };
