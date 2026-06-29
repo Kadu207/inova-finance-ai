@@ -28,6 +28,7 @@ model Tenant {
   bankTransactions       BankTransaction[]
   reconciliationMatches  ReconciliationMatch[]
   reconciliationSessions ReconciliationSession[]
+  charges                Charge[]
 
   @@index([slug])
 }
@@ -370,4 +371,35 @@ model ReconciliationSession {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt])
+}
+
+enum ChargeMethod {
+  boleto
+  pix
+}
+
+enum ChargeStatus {
+  pending
+  paid
+  cancelled
+}
+
+model Charge {
+  id           String       @id @default(cuid())
+  tenantId     String
+  receivableId String
+  method       ChargeMethod
+  provider     String       @default("stub")
+  providerId   String?
+  status       ChargeStatus @default(pending)
+  amount       Decimal      @db.Decimal(18, 2)
+  boletoUrl    String?
+  pixCode      String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([tenantId, providerId])
 }
