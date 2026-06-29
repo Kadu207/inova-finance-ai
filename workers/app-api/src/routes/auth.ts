@@ -53,10 +53,32 @@ authRoutes.post("/login", async (c) => {
     return c.json({ error: "Credenciais inválidas" }, 401);
   }
 
-  if (requireMfaForRole(userRecord.role) && userRecord.mfaEnabled) {
+  const mfaRequired = requireMfaForRole(userRecord.role);
+
+  // Admin/owner com MFA habilitado: exige o código TOTP no login.
+  if (mfaRequired && userRecord.mfaEnabled) {
     if (!body.totp || !userRecord.mfaSecret || !(await verifyTotp(userRecord.mfaSecret, body.totp))) {
       return c.json({ error: "MFA obrigatório", mfaRequired: true }, 401);
     }
+  }
+
+  // MFA é OBRIGATÓRIO para admin/owner. Se ainda não habilitou, ele não recebe sessão:
+  // emitimos um token de ENROLAMENTO de escopo restrito (10 min) que só é aceito por
+  // /auth/mfa/setup e /auth/mfa/verify. Sem habilitar o MFA, não há acesso a rota protegida.
+  if (mfaRequired && !userRecord.mfaEnabled) {
+    const enrollmentToken = await signJwt(
+      {
+        userId: userRecord.userId,
+        email: userRecord.email,
+        tenantId: userRecord.tenantId,
+        role: userRecord.role,
+        branchIds: userRecord.branchIds,
+      },
+      c.env.JWT_SECRET,
+      600,
+      "mfa-enrollment",
+    );
+    return c.json({ mfaEnrollmentRequired: true, enrollmentToken, role: userRecord.role });
   }
 
   const token = await signJwt(
@@ -77,7 +99,7 @@ authRoutes.post("/mfa/setup", async (c) => {
   // C4 — exige JWT válido; o e-mail vem do token, nunca do body (impede
   // configurar MFA para a conta de terceiros).
   const token = c.req.header("Authorization")?.replace("Bearer ", "");
-  const user = token ? await verifyJwt(token, c.env.JWT_SECRET) : null;
+  const user = token ? await verifyJwt(token, c.env.JWT_SECRET, { allowEnrollment: true }) : null;
   if (!user) return c.json({ error: "Unauthorized" }, 401);
 
   const secret = generateTotpSecret();
@@ -91,7 +113,7 @@ authRoutes.post("/mfa/setup", async (c) => {
 authRoutes.post("/mfa/verify", async (c) => {
   // C4 — exige JWT válido; o e-mail vem do token, nunca do body.
   const token = c.req.header("Authorization")?.replace("Bearer ", "");
-  const user = token ? await verifyJwt(token, c.env.JWT_SECRET) : null;
+  const user = token ? await verifyJwt(token, c.env.JWT_SECRET, { allowEnrollment: true }) : null;
   if (!user) return c.json({ error: "Unauthorized" }, 401);
 
   const body = await c.req.json<{ totp: string }>();
