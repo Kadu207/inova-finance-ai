@@ -62,6 +62,8 @@ type MemMatch = {
   resourceId: string;
   origin: "auto" | "ai" | "manual";
   status: "suggested" | "confirmed" | "rejected";
+  confidence?: number | null;
+  reason?: string | null;
 };
 const txnsMemory = new Map<string, MemTxn>();
 const matchesMemory = new Map<string, MemMatch>();
@@ -96,11 +98,15 @@ async function importDb(
       const start = new Date(new Date(`${t.date}T00:00:00Z`).getTime() - MATCH_WINDOW_DAYS * 86_400_000);
       const end = new Date(new Date(`${t.date}T00:00:00Z`).getTime() + MATCH_WINDOW_DAYS * 86_400_000);
 
+      // Auto-confirma só quando há EXATAMENTE 1 candidato; ambíguo (>1) fica
+      // unmatched para a US4 sugerir com confiança.
       if (t.type === "debit") {
-        const p = await tx.payable.findFirst({
+        const ps = await tx.payable.findMany({
           where: { tenantId, status: "open", amount: t.amount, dueDate: { gte: start, lte: end } },
+          take: 2,
         });
-        if (p) {
+        if (ps.length === 1) {
+          const p = ps[0]!;
           await tx.payable.update({ where: { id: p.id }, data: { status: "paid" } });
           await tx.bankTransaction.update({ where: { id: bt.id }, data: { status: "matched" } });
           await tx.reconciliationMatch.create({
@@ -109,10 +115,12 @@ async function importDb(
           matched++;
         }
       } else {
-        const r = await tx.receivable.findFirst({
+        const rs = await tx.receivable.findMany({
           where: { tenantId, status: "open", amount: t.amount, dueDate: { gte: start, lte: end } },
+          take: 2,
         });
-        if (r) {
+        if (rs.length === 1) {
+          const r = rs[0]!;
           await tx.receivable.update({ where: { id: r.id }, data: { status: "paid" } });
           await tx.bankTransaction.update({ where: { id: bt.id }, data: { status: "matched" } });
           await tx.reconciliationMatch.create({
@@ -151,13 +159,14 @@ function importMemory(
     let status: "unmatched" | "matched" = "unmatched";
     const txnId = crypto.randomUUID();
     const pool = t.type === "debit" ? payables : receivables;
-    const found = [...pool.values()].find(
+    const candidates = [...pool.values()].filter(
       (x) =>
         x.tenantId === tenantId &&
         x.status === "open" &&
         parseFloat(x.amount) === parseFloat(t.amount) &&
         withinWindow(x.dueDate, t.date),
     );
+    const found = candidates.length === 1 ? candidates[0] : undefined; // ambíguo (>1) → US4
     if (found) {
       found.status = "paid";
       status = "matched";
@@ -195,8 +204,24 @@ export async function importStatement(
   return importMemory(tenantId, { bankAccountId: input.bankAccountId, fileName: input.fileName, txns });
 }
 
-function activeMatchView(m: MemMatch | { id: string; status: string; origin: string; resourceType: string; resourceId: string }) {
-  return { id: m.id, status: m.status, origin: m.origin, resourceType: m.resourceType, resourceId: m.resourceId };
+function activeMatchView(m: {
+  id: string;
+  status: string;
+  origin: string;
+  resourceType: string;
+  resourceId: string;
+  confidence?: number | null;
+  reason?: string | null;
+}) {
+  return {
+    id: m.id,
+    status: m.status,
+    origin: m.origin,
+    resourceType: m.resourceType,
+    resourceId: m.resourceId,
+    confidence: m.confidence ?? null,
+    reason: m.reason ?? null,
+  };
 }
 
 /** Lista os lançamentos bancários do tenant, com o match ativo (não-rejeitado) — base da revisão (US2). */
@@ -314,6 +339,141 @@ export async function createManualMatch(
   const id = crypto.randomUUID();
   matchesMemory.set(id, { id, tenantId, bankTransactionId: bt.id, resourceType: input.resourceType, resourceId: input.resourceId, origin: "manual", status: "confirmed" });
   return { id };
+}
+
+// ---- US4: sugestão de match por IA (com confiança) ----
+
+type Candidate = { id: string; name: string; dueDate: string; amount: string };
+type Pick = { resourceId: string; confidence: number; reason: string };
+
+function dayDist(dueDate: string, postedDate: string): number {
+  const a = new Date(`${dueDate.slice(0, 10)}T00:00:00Z`).getTime();
+  const b = new Date(`${postedDate.slice(0, 10)}T00:00:00Z`).getTime();
+  return Math.round(Math.abs(a - b) / 86_400_000);
+}
+
+/** Heurística determinística: escolhe o candidato de vencimento mais próximo. */
+function pickDeterministic(postedDate: string, candidates: Candidate[]): Pick {
+  const ranked = [...candidates].sort((a, b) => dayDist(a.dueDate, postedDate) - dayDist(b.dueDate, postedDate));
+  const best = ranked[0]!;
+  const dist = dayDist(best.dueDate, postedDate);
+  const confidence = Math.max(0.5, Math.min(0.95, 0.95 - 0.1 * (candidates.length - 1) - 0.05 * dist));
+  const reason =
+    candidates.length === 1
+      ? `Mesmo valor; vencimento a ${dist} dia(s) da data do lançamento.`
+      : `${candidates.length} candidatos de mesmo valor; escolhido o de vencimento mais próximo (${dist} dia(s)).`;
+  return { resourceId: best.id, confidence: Math.round(confidence * 100) / 100, reason };
+}
+
+/** LLM (OpenRouter) escolhe entre os candidatos; números/ids vêm só dos candidatos. */
+async function pickWithLlm(key: string, bt: { date: string; amount: string }, candidates: Candidate[]): Promise<Pick | null> {
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: "anthropic/claude-3.5-sonnet",
+        max_tokens: 220,
+        messages: [
+          {
+            role: "system",
+            content:
+              "Você concilia lançamentos bancários. Dado um lançamento e candidatos (JSON), escolha o título " +
+              'mais provável. Responda APENAS um JSON {"resourceId":"<id de um candidato>","confidence":0..1,"reason":"..."}. ' +
+              "Use somente os dados fornecidos; não invente.",
+          },
+          { role: "user", content: JSON.stringify({ lancamento: { data: bt.date, valor: bt.amount }, candidatos: candidates }) },
+        ],
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const content = json.choices?.[0]?.message?.content ?? "";
+    const m = content.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    const parsed = JSON.parse(m[0]) as { resourceId?: string; confidence?: number; reason?: string };
+    if (!parsed.resourceId || !candidates.some((c) => c.id === parsed.resourceId)) return null;
+    return {
+      resourceId: parsed.resourceId,
+      confidence: Math.max(0, Math.min(1, Number(parsed.confidence ?? 0.7))),
+      reason: String(parsed.reason ?? "Sugerido pela IA."),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function pickBest(bt: { date: string; amount: string }, candidates: Candidate[], key?: string): Promise<Pick> {
+  if (key) {
+    const llm = await pickWithLlm(key, bt, candidates);
+    if (llm) return llm;
+  }
+  return pickDeterministic(bt.date, candidates);
+}
+
+/**
+ * US4 — para cada lançamento não conciliado com candidatos de mesmo valor, cria uma
+ * sugestão (origin=ai, status=suggested) com confiança e justificativa. Nunca confirma
+ * automaticamente (a confirmação é humana, via US2). LLM se OPENROUTER_API_KEY existir,
+ * senão heurística determinística.
+ */
+export async function suggestMatches(
+  db: PrismaClient | null,
+  tenantId: string,
+  openrouterKey?: string,
+): Promise<{ suggested: number }> {
+  if (db) {
+    return withTenantScope(db, tenantId, async (tx) => {
+      const unmatched = await tx.bankTransaction.findMany({ where: { tenantId, status: "unmatched" }, include: { matches: true } });
+      let suggested = 0;
+      for (const bt of unmatched) {
+        if (bt.matches.some((m) => m.status !== "rejected")) continue;
+        const date = bt.postedAt.toISOString().slice(0, 10);
+        const start = new Date(bt.postedAt.getTime() - MATCH_WINDOW_DAYS * 86_400_000);
+        const end = new Date(bt.postedAt.getTime() + MATCH_WINDOW_DAYS * 86_400_000);
+        const amount = bt.amount.toString();
+        const candidates: Candidate[] =
+          bt.type === "debit"
+            ? (await tx.payable.findMany({ where: { tenantId, status: "open", amount, dueDate: { gte: start, lte: end } } })).map((p) => ({ id: p.id, name: p.supplierName, dueDate: p.dueDate.toISOString().slice(0, 10), amount: p.amount.toString() }))
+            : (await tx.receivable.findMany({ where: { tenantId, status: "open", amount, dueDate: { gte: start, lte: end } } })).map((r) => ({ id: r.id, name: r.customerName, dueDate: r.dueDate.toISOString().slice(0, 10), amount: r.amount.toString() }));
+        if (candidates.length === 0) continue;
+        const pick = await pickBest({ date, amount }, candidates, openrouterKey);
+        await tx.reconciliationMatch.create({
+          data: { tenantId, bankTransactionId: bt.id, resourceType: bt.type === "debit" ? "payable" : "receivable", resourceId: pick.resourceId, origin: "ai", status: "suggested", confidence: pick.confidence, reason: pick.reason } as Prisma.ReconciliationMatchUncheckedCreateInput,
+        });
+        suggested++;
+      }
+      return { suggested };
+    });
+  }
+
+  const { payables, receivables } = __memoryStoresForTests();
+  let suggested = 0;
+  for (const bt of txnsMemory.values()) {
+    if (bt.tenantId !== tenantId || bt.status !== "unmatched") continue;
+    if ([...matchesMemory.values()].some((m) => m.bankTransactionId === bt.id && m.status !== "rejected")) continue;
+    const pool = bt.type === "debit" ? payables : receivables;
+    const candidates: Candidate[] = [...pool.values()]
+      .filter((x) => x.tenantId === tenantId && x.status === "open" && parseFloat(x.amount) === parseFloat(bt.amount) && withinWindow(x.dueDate, bt.date))
+      .map((x) => ({ id: x.id, name: "supplierName" in x ? x.supplierName : x.customerName, dueDate: x.dueDate, amount: x.amount }));
+    if (candidates.length === 0) continue;
+    const pick = await pickBest({ date: bt.date, amount: bt.amount }, candidates, openrouterKey);
+    const id = crypto.randomUUID();
+    matchesMemory.set(id, {
+      id,
+      tenantId,
+      bankTransactionId: bt.id,
+      resourceType: bt.type === "debit" ? "payable" : "receivable",
+      resourceId: pick.resourceId,
+      origin: "ai",
+      status: "suggested",
+      confidence: pick.confidence,
+      reason: pick.reason,
+    });
+    suggested++;
+  }
+  return { suggested };
 }
 
 /** @internal test hook */

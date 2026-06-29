@@ -5,6 +5,8 @@ import {
   importOfx,
   fetchBankTransactions,
   rejectReconMatch,
+  confirmReconMatch,
+  suggestReconMatches,
   createReconManualMatch,
   fetchPayables,
   fetchReceivables,
@@ -27,6 +29,7 @@ export function ReconciliationClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -76,6 +79,31 @@ export function ReconciliationClient() {
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao estornar");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleSuggest() {
+    setSuggesting(true);
+    setError(null);
+    try {
+      await suggestReconMatches();
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao sugerir conciliações");
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
+  async function handleConfirm(matchId: string) {
+    setBusy(matchId);
+    try {
+      await confirmReconMatch(matchId);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao confirmar");
     } finally {
       setBusy(null);
     }
@@ -143,8 +171,11 @@ export function ReconciliationClient() {
       )}
 
       <div className="ina-card">
-        <div className="ina-card__header">
+        <div className="ina-card__header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <strong>Lançamentos do extrato</strong>
+          <button type="button" className="ina-btn ina-btn--ghost" disabled={suggesting} onClick={() => void handleSuggest()}>
+            {suggesting ? "Sugerindo…" : "Sugerir conciliações (IA)"}
+          </button>
         </div>
         <div className="ina-card__body" style={{ padding: 0 }}>
           {loading ? (
@@ -179,7 +210,19 @@ export function ReconciliationClient() {
                         </span>
                       </td>
                       <td style={{ textAlign: "right" }}>
-                        {t.status === "matched" && t.match ? (
+                        {t.match && t.match.status === "suggested" ? (
+                          <div style={{ display: "flex", gap: "0.25rem", alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                            <span className="ina-badge ina-badge--warning" title={t.match.reason ?? ""}>
+                              Sugerido{t.match.confidence != null ? ` ${Math.round(t.match.confidence * 100)}%` : ""}
+                            </span>
+                            <button type="button" className="ina-btn ina-btn--primary" disabled={busy === t.match.id} onClick={() => void handleConfirm(t.match!.id)}>
+                              Confirmar
+                            </button>
+                            <button type="button" className="ina-btn ina-btn--ghost" disabled={busy === t.match.id} onClick={() => void handleReject(t.match!.id)}>
+                              Rejeitar
+                            </button>
+                          </div>
+                        ) : t.status === "matched" && t.match ? (
                           <button
                             type="button"
                             className="ina-btn ina-btn--ghost"

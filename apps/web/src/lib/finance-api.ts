@@ -115,7 +115,15 @@ export type BankTxn = {
   postedAt: string;
   description: string;
   status: "matched" | "unmatched";
-  match: { id: string; status: string; origin: string; resourceType: string; resourceId: string } | null;
+  match: {
+    id: string;
+    status: string;
+    origin: string;
+    resourceType: string;
+    resourceId: string;
+    confidence: number | null;
+    reason: string | null;
+  } | null;
 };
 
 export async function importOfx(bankAccountId: string, ofx: string, fileName?: string) {
@@ -134,6 +142,15 @@ export async function fetchBankTransactions() {
 
 export async function rejectReconMatch(matchId: string) {
   await apiClient.post(`/api/reconciliation/matches/${matchId}/reject`, {});
+}
+
+export async function confirmReconMatch(matchId: string) {
+  await apiClient.post(`/api/reconciliation/matches/${matchId}/confirm`, {});
+}
+
+export async function suggestReconMatches() {
+  const res = await apiClient.post<{ data: { suggested: number } }>("/api/reconciliation/suggest", {});
+  return res.data;
 }
 
 export async function createReconManualMatch(bankTransactionId: string, resourceType: "payable" | "receivable", resourceId: string) {

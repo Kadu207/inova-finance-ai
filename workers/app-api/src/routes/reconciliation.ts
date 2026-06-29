@@ -6,7 +6,7 @@ import { verifyJwt } from "../auth";
 import { hasPermission } from "../rbac";
 import { getDb, resolveConnectionString } from "../db/client";
 import { writeAuditLog } from "../db/audit-store";
-import { importStatement, listBankTransactions, confirmMatch, rejectMatch, createManualMatch } from "../db/reconciliation-store";
+import { importStatement, listBankTransactions, confirmMatch, rejectMatch, createManualMatch, suggestMatches } from "../db/reconciliation-store";
 
 type ReconVars = { tenant: TenantContext; user: AuthUser; db: PrismaClient | null };
 
@@ -79,6 +79,16 @@ reconciliationRoutes.get("/transactions", async (c) => {
   const tenant = c.get("tenant");
   const items = await listBankTransactions(c.get("db"), tenant.tenantId);
   return c.json({ data: items });
+});
+
+// US4 — gera sugestões de match (IA/heurística) para lançamentos ambíguos/pendentes.
+reconciliationRoutes.post("/suggest", async (c) => {
+  const tenant = c.get("tenant");
+  const user = c.get("user");
+  if (!hasPermission(user.role, "finance:write")) return c.json({ error: "Forbidden" }, 403);
+  const result = await suggestMatches(c.get("db"), tenant.tenantId, c.env.OPENROUTER_API_KEY);
+  await audit(c.get("db"), user.userId, tenant.tenantId, "reconciliation.suggest", `${result.suggested} sugestões`);
+  return c.json({ data: result });
 });
 
 // US2 — confirmar um match sugerido.
