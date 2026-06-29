@@ -50,6 +50,12 @@ export function buildTotpUri(secret: string, email: string): string {
   return `otpauth://totp/InovaFinanceAI:${encodeURIComponent(email)}?secret=${secret}&issuer=InovaFinanceAI`;
 }
 
+/** Gera o código TOTP corrente para o segredo (contraparte de `verifyTotp`). */
+export async function generateTotp(secret: string): Promise<string> {
+  const counter = Math.floor(Date.now() / 1000 / 30);
+  return hotp(base32Decode(secret), counter);
+}
+
 export async function verifyTotp(secret: string, token: string, window = 1): Promise<boolean> {
   const decoded = base32Decode(secret);
   const counter = Math.floor(Date.now() / 1000 / 30);

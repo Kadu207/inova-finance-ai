@@ -58,7 +58,14 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return timingSafeEqual(hash, expectedHash);
 }
 
-export async function signJwt(user: AuthUser, secret: string, expiresInSec = 3600): Promise<string> {
+/**
+ * Escopo do token. Sem escopo (`undefined`) = token de sessão pleno. `mfa-enrollment`
+ * = token restrito, emitido a admin/owner que ainda precisa habilitar o MFA obrigatório;
+ * só é aceito por `/auth/mfa/setup` e `/auth/mfa/verify` (ver `verifyJwt`).
+ */
+export type JwtScope = "mfa-enrollment";
+
+export async function signJwt(user: AuthUser, secret: string, expiresInSec = 3600, scope?: JwtScope): Promise<string> {
   const header = base64UrlEncodeString(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const payload = base64UrlEncodeString(
     JSON.stringify({
@@ -67,6 +74,7 @@ export async function signJwt(user: AuthUser, secret: string, expiresInSec = 360
       tenantId: user.tenantId,
       role: user.role,
       branchIds: user.branchIds,
+      ...(scope ? { scope } : {}),
       exp: Math.floor(Date.now() / 1000) + expiresInSec,
     }),
   );
@@ -77,7 +85,16 @@ export async function signJwt(user: AuthUser, secret: string, expiresInSec = 360
   return `${data}.${signature}`;
 }
 
-export async function verifyJwt(token: string, secret: string): Promise<AuthUser | null> {
+/**
+ * Verifica o JWT. Por padrão, tokens de escopo restrito (ex.: `mfa-enrollment`) são
+ * REJEITADOS — assim um token de enrolamento nunca alcança rotas protegidas. Passe
+ * `{ allowEnrollment: true }` apenas em `/auth/mfa/*` para aceitar o enrolamento.
+ */
+export async function verifyJwt(
+  token: string,
+  secret: string,
+  opts: { allowEnrollment?: boolean } = {},
+): Promise<AuthUser | null> {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   const [header, payload, signature] = parts as [string, string, string];
@@ -108,6 +125,7 @@ export async function verifyJwt(token: string, secret: string): Promise<AuthUser
     tenantId: string;
     role: string;
     branchIds: string[];
+    scope?: string;
     exp: number;
   };
   try {
@@ -116,6 +134,8 @@ export async function verifyJwt(token: string, secret: string): Promise<AuthUser
     return null;
   }
   if (decoded.exp < Math.floor(Date.now() / 1000)) return null;
+  // Token de enrolamento de MFA só vale nas rotas /auth/mfa/* (allowEnrollment).
+  if (decoded.scope === "mfa-enrollment" && !opts.allowEnrollment) return null;
   return {
     userId: decoded.sub,
     email: decoded.email,
