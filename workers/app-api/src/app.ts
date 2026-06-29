@@ -12,6 +12,7 @@ import { reconciliationRoutes } from "./routes/reconciliation";
 import { chargesRoutes, pspWebhookRoutes } from "./routes/charges";
 import { invoiceRoutes, nfseWebhookRoutes } from "./routes/invoices";
 import { dreRoutes } from "./routes/dre";
+import { recurrenceRoutes } from "./routes/recurrences";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -29,6 +30,7 @@ app.route("/auth", authRoutes);
 app.use("/api/*", requireTenantContext());
 app.route("/api/finance", financeRoutes);
 app.route("/api/dre", dreRoutes);
+app.route("/api/recurrences", recurrenceRoutes);
 app.route("/api/integrations", integrationRoutes);
 app.route("/api/lgpd", lgpdRoutes);
 app.route("/api/assistant", assistantRoutes);

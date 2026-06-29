@@ -31,6 +31,7 @@ model Tenant {
   charges                Charge[]
   invoices               Invoice[]
   costCenters            CostCenter[]
+  recurrences            Recurrence[]
 
   @@index([slug])
 }
@@ -451,4 +452,27 @@ model CostCenter {
 
   @@unique([tenantId, code])
   @@index([tenantId])
+}
+
+enum RecurrenceType {
+  payable
+  receivable
+}
+
+model Recurrence {
+  id           String         @id @default(cuid())
+  tenantId     String
+  type         RecurrenceType
+  name         String
+  amount       Decimal        @db.Decimal(18, 2)
+  dayOfMonth   Int
+  branchId     String
+  costCenterId String?
+  active       Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, active])
 }
