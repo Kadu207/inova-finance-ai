@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import app from "../app";
 import type { Env } from "../types";
-import { signJwt } from "../auth";
+import { signJwt, hashPassword } from "../auth";
 import { generateTotp } from "../mfa";
 import { createLocalEnv } from "../local-env";
 
@@ -121,5 +121,50 @@ describe("Auth — endpoints MFA exigem JWT (C4)", () => {
     expect(json.secret).toBeTruthy();
     expect(json.uri).toContain("user%40a.test");
     expect(json.uri).not.toContain("victim");
+  });
+});
+
+describe("Auth — refresh token e revogação", () => {
+  // Semeia um usuário de role "finance" no KV (sem MFA) para obter sessão plena no login dev.
+  async function seedFinanceUser(env: Env): Promise<void> {
+    const passwordHash = await hashPassword("senha123");
+    await env.SESSIONS.put(
+      "user:fin@a.test",
+      JSON.stringify({ userId: "u-fin", email: "fin@a.test", passwordHash, role: "finance", mfaEnabled: false, branchIds: ["branch_main"] }),
+    );
+  }
+
+  it("login emite access + refresh; refresh rotaciona e revoga o anterior; logout revoga", async () => {
+    const env = devEnv();
+    await seedFinanceUser(env);
+
+    const login = (await (await post("/auth/login", env, {}, { email: "fin@a.test", password: "senha123" })).json()) as {
+      token: string;
+      refreshToken: string;
+    };
+    expect(typeof login.token).toBe("string");
+    expect(typeof login.refreshToken).toBe("string");
+
+    // /refresh → novo par; o refresh anterior deixa de valer (uso único)
+    const r1 = await post("/auth/refresh", env, {}, { refreshToken: login.refreshToken });
+    expect(r1.status).toBe(200);
+    const refreshed = (await r1.json()) as { token: string; refreshToken: string };
+    expect(typeof refreshed.token).toBe("string");
+    expect(refreshed.refreshToken).not.toBe(login.refreshToken);
+
+    const reuseOld = await post("/auth/refresh", env, {}, { refreshToken: login.refreshToken });
+    expect(reuseOld.status).toBe(401);
+
+    // logout revoga o refresh atual
+    const logout = await post("/auth/logout", env, {}, { refreshToken: refreshed.refreshToken });
+    expect(logout.status).toBe(200);
+    const afterLogout = await post("/auth/refresh", env, {}, { refreshToken: refreshed.refreshToken });
+    expect(afterLogout.status).toBe(401);
+  });
+
+  it("refresh sem token → 400; refresh inválido → 401", async () => {
+    const env = devEnv();
+    expect((await post("/auth/refresh", env, {}, {})).status).toBe(400);
+    expect((await post("/auth/refresh", env, {}, { refreshToken: "inexistente" })).status).toBe(401);
   });
 });
