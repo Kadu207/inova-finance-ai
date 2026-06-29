@@ -29,6 +29,7 @@ model Tenant {
   reconciliationMatches  ReconciliationMatch[]
   reconciliationSessions ReconciliationSession[]
   charges                Charge[]
+  invoices               Invoice[]
 
   @@index([slug])
 }
@@ -397,6 +398,36 @@ model Charge {
   pixCode      String?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([tenantId, providerId])
+}
+
+enum InvoiceStatus {
+  pending
+  processing
+  issued
+  cancelled
+  error
+}
+
+model Invoice {
+  id                 String        @id @default(cuid())
+  tenantId           String
+  receivableId       String?
+  serviceDescription String
+  amount             Decimal       @db.Decimal(18, 2)
+  customerName       String
+  provider           String        @default("stub")
+  providerId         String?
+  number             String?
+  status             InvoiceStatus @default(pending)
+  pdfUrl             String?
+  xmlUrl             String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 

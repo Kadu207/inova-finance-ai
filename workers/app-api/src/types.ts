@@ -10,6 +10,8 @@ export interface Env {
   OPENROUTER_API_KEY?: string;
   /** Opcional — habilita o PSP real (Asaas) para boleto/PIX. Sem ele, provider stub. */
   ASAAS_API_KEY?: string;
+  /** Opcional — habilita o provedor real de NFS-e (ex.: PlugNotas). Sem ele, provider stub. */
+  NFSE_API_KEY?: string;
 }
 
 export interface TenantContext {
