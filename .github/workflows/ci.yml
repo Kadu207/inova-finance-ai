@@ -33,6 +33,47 @@ jobs:
       - run: pnpm db:generate
       - run: pnpm test
 
+  # Isolamento multitenant (RLS) contra Postgres real. Sobe um serviço Postgres, aplica
+  # schema + RLS (que cria a role NÃO-superuser inova_app) e roda o teste de isolamento
+  # conectando como inova_app. Sem isto, o teste é PULADO (gated em RLS_TEST_DATABASE_URL).
+  rls-isolation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: inova
+          POSTGRES_PASSWORD: inova_dev
+          POSTGRES_DB: inova_finance
+        ports:
+          - 5442:5432
+        options: >-
+          --health-cmd "pg_isready -U inova -d inova_finance"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      # Conexão de owner (superuser do serviço) para criar schema e a role inova_app.
+      - name: Aplicar schema + RLS
+        run: |
+          pnpm db:push
+          pnpm db:rls
+        env:
+          DATABASE_URL: postgresql://inova:inova_dev@localhost:5442/inova_finance
+      # Conexão como inova_app (sem BYPASSRLS) — é o que torna a RLS efetiva no teste.
+      - name: Teste de isolamento
+        run: pnpm --filter @inova/app-api exec vitest run src/db/rls-isolation.test.ts
+        env:
+          RLS_TEST_DATABASE_URL: postgresql://inova_app:inova_app_dev@localhost:5442/inova_finance
+
   test-python:
     runs-on: ubuntu-latest
     steps:
