@@ -145,12 +145,10 @@ jobs:
           pnpm db:generate
           pnpm --filter @inova/app-api test:coverage
           sed -i 's#^SF:#SF:workers/app-api/#' workers/app-api/coverage/lcov.info
-      # Não bloqueia o CI: até o "Automatic Analysis" ser desligado no dashboard,
-      # o scan via CI falha ("running CI analysis while Automatic Analysis is enabled");
-      # continue-on-error mantém o check verde. Remover quando o dashboard estiver ok.
+      # Bloqueante: com o "Automatic Analysis" desligado no projeto Kadu207_inova-finance-ai,
+      # o scan via CI roda limpo. Se o scan falhar, o job falha.
       - name: SonarCloud Scan
         if: ${{ env.SONAR_TOKEN != '' }}
-        continue-on-error: true
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
