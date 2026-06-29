@@ -8,6 +8,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "◈" },
   { href: "/payables", label: "Contas a Pagar", icon: "↓" },
   { href: "/receivables", label: "Contas a Receber", icon: "↑" },
+  { href: "/reconciliation", label: "Conciliação", icon: "⇄" },
   { href: "/support", label: "Atendimento", icon: "◎" },
 ] as const;
 
