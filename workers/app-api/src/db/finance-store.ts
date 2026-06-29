@@ -41,7 +41,7 @@ export async function listPayables(db: PrismaClient | null, tenantId: string): P
 export async function createPayable(
   db: PrismaClient | null,
   tenantId: string,
-  input: { supplierName: string; amount: string; dueDate: string; branchId: string; idempotencyKey: string },
+  input: { supplierName: string; amount: string; dueDate: string; branchId: string; idempotencyKey: string; costCenterId?: string | null },
 ): Promise<PayableRecord> {
   if (db) {
     try {
@@ -55,6 +55,7 @@ export async function createPayable(
             supplierName: input.supplierName,
             amount: input.amount,
             dueDate: new Date(input.dueDate),
+            costCenterId: input.costCenterId ?? null,
             idempotencyKey: input.idempotencyKey,
           },
         });
@@ -87,6 +88,7 @@ export async function createPayable(
     amount: input.amount,
     dueDate: input.dueDate,
     status: "open",
+    costCenterId: input.costCenterId ?? null,
     idempotencyKey: input.idempotencyKey,
     createdAt: new Date().toISOString(),
   };
@@ -109,7 +111,7 @@ export async function listReceivables(db: PrismaClient | null, tenantId: string)
 export async function createReceivable(
   db: PrismaClient | null,
   tenantId: string,
-  input: { customerName: string; amount: string; dueDate: string; branchId: string; idempotencyKey: string },
+  input: { customerName: string; amount: string; dueDate: string; branchId: string; idempotencyKey: string; costCenterId?: string | null },
 ): Promise<ReceivableRecord> {
   if (db) {
     try {
@@ -123,6 +125,7 @@ export async function createReceivable(
             customerName: input.customerName,
             amount: input.amount,
             dueDate: new Date(input.dueDate),
+            costCenterId: input.costCenterId ?? null,
             idempotencyKey: input.idempotencyKey,
           },
         });
@@ -150,6 +153,7 @@ export async function createReceivable(
     amount: input.amount,
     dueDate: input.dueDate,
     status: "open",
+    costCenterId: input.costCenterId ?? null,
     idempotencyKey: input.idempotencyKey,
     createdAt: new Date().toISOString(),
   };
