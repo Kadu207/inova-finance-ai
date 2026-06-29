@@ -1,6 +1,6 @@
 import app from "./app";
 import type { Env } from "./types";
-import { getDb, resolveConnectionString } from "./db/client";
+import { getDb, resolveConnectionString, setRuntimeEnvironment } from "./db/client";
 import { runRecurrencesAllTenants } from "./db/recurrences-store";
 
 /**
@@ -9,6 +9,7 @@ import { runRecurrencesAllTenants } from "./db/recurrences-store";
  * acidental do trigger não duplica. Configurado em wrangler.jsonc → triggers.crons.
  */
 async function runMonthlyRecurrences(env: Env): Promise<void> {
+  setRuntimeEnvironment(env.ENVIRONMENT);
   const month = new Date().toISOString().slice(0, 7);
   const db = await getDb(resolveConnectionString(env));
   const result = await runRecurrencesAllTenants(db, month);
