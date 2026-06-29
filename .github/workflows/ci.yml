@@ -88,8 +88,12 @@ jobs:
         if: ${{ env.SONAR_TOKEN != '' }}
         with:
           fetch-depth: 0
+      # Não bloqueia o CI: até o "Automatic Analysis" ser desligado no dashboard,
+      # o scan via CI falha ("running CI analysis while Automatic Analysis is enabled");
+      # continue-on-error mantém o check verde. Remover quando o dashboard estiver ok.
       - name: SonarCloud Scan
         if: ${{ env.SONAR_TOKEN != '' }}
+        continue-on-error: true
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
