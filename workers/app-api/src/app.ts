@@ -9,6 +9,7 @@ import { integrationRoutes } from "./routes/integrations";
 import { lgpdRoutes } from "./routes/lgpd";
 import { assistantRoutes } from "./routes/assistant";
 import { reconciliationRoutes } from "./routes/reconciliation";
+import { chargesRoutes, pspWebhookRoutes } from "./routes/charges";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -29,6 +30,8 @@ app.route("/api/integrations", integrationRoutes);
 app.route("/api/lgpd", lgpdRoutes);
 app.route("/api/assistant", assistantRoutes);
 app.route("/api/reconciliation", reconciliationRoutes);
+app.route("/api/charges", chargesRoutes);
+app.route("/webhooks", pspWebhookRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 app.onError((err, c) => {

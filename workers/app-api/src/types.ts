@@ -8,6 +8,8 @@ export interface Env {
   EVENTS_QUEUE: Queue;
   /** Opcional — habilita o LLM do assistente (OpenRouter). Sem ele, respostas determinísticas. */
   OPENROUTER_API_KEY?: string;
+  /** Opcional — habilita o PSP real (Asaas) para boleto/PIX. Sem ele, provider stub. */
+  ASAAS_API_KEY?: string;
 }
 
 export interface TenantContext {
