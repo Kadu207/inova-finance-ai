@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Env } from "./types";
 import { requireTenantContext } from "./middleware/tenant";
+import { setRuntimeEnvironment } from "./db/client";
 import { authRoutes } from "./routes/auth";
 import { financeRoutes } from "./routes/finance";
 import { healthRoutes } from "./routes/health";
@@ -24,6 +25,12 @@ app.use("*", cors({
   ],
   allowHeaders: ["Content-Type", "Authorization", "X-Tenant-Id", "X-Branch-Id", "X-Correlation-Id", "X-Idempotency-Key"],
 }));
+
+// Registra o ambiente para a guarda de RLS (BYPASSRLS é fatal em produção). Antes das rotas.
+app.use("*", async (c, next) => {
+  setRuntimeEnvironment(c.env.ENVIRONMENT);
+  await next();
+});
 
 app.route("/", healthRoutes);
 app.route("/auth", authRoutes);

@@ -1,7 +1,27 @@
 import type { Prisma, PrismaClient } from "@inova/db";
 import type { Env } from "../types";
+import { assertRlsEnforceable, type RoleInfo } from "./rls-guard";
 
 const clients = new Map<string, PrismaClient>();
+// Conexões já checadas contra BYPASSRLS (a guarda roda uma vez por connection string).
+const rlsGuardChecked = new Set<string>();
+
+// Ambiente corrente (production|staging|development), setado no boot por setRuntimeEnvironment.
+// Decide se uma role com BYPASSRLS é FATAL (production) ou apenas um aviso (dev).
+let runtimeEnvironment: string | undefined;
+
+/** Registra o ambiente corrente para a guarda de RLS. Chamado por um middleware no boot. */
+export function setRuntimeEnvironment(environment: string | undefined): void {
+  runtimeEnvironment = environment;
+}
+
+/** Consulta no Postgres se a role conectada é superuser ou tem BYPASSRLS. */
+export async function probeRole(client: PrismaClient): Promise<RoleInfo> {
+  const rows = await client.$queryRaw<Array<{ role: string; rolsuper: boolean; rolbypassrls: boolean }>>`
+    SELECT current_user::text AS role, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`;
+  const r = rows[0];
+  return { role: r?.role ?? "unknown", canBypass: Boolean(r?.rolsuper || r?.rolbypassrls) };
+}
 
 /**
  * Resolve a connection string do Postgres: prioriza o binding Hyperdrive
@@ -31,6 +51,12 @@ export async function getDb(connectionString: string | null): Promise<PrismaClie
   const client = createPrismaClient(connectionString);
   try {
     await client.$queryRaw`SELECT 1`;
+    // Guarda de boot: se a role conectada ignora a RLS, em produção isto LANÇA (fail-closed)
+    // — a app não sobe "achando" que está isolada quando não está. Roda uma vez por conexão.
+    if (!rlsGuardChecked.has(connectionString)) {
+      await assertRlsEnforceable(() => probeRole(client), runtimeEnvironment);
+      rlsGuardChecked.add(connectionString);
+    }
   } catch (error) {
     // B3 — com banco configurado, uma falha de conexão NÃO cai silenciosamente
     // para in-memory (perderia escritas financeiras). Propaga → 500 explícito.
@@ -71,4 +97,5 @@ export function resetDbCacheForTests(): void {
     void client.$disconnect().catch(() => {});
   }
   clients.clear();
+  rlsGuardChecked.clear();
 }
