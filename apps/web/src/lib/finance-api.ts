@@ -96,3 +96,46 @@ export async function fetchAgenda() {
   const res = await apiClient.get<{ data: AgendaItem[] }>("/api/finance/agenda");
   return res.data;
 }
+
+// ---- Conciliação bancária (US1/US2) ----
+
+export type ReconImportResult = {
+  sessionId: string;
+  bankAccountId: string;
+  total: number;
+  matched: number;
+  unmatched: number;
+};
+
+export type BankTxn = {
+  id: string;
+  fitid: string;
+  amount: string;
+  type: "debit" | "credit";
+  postedAt: string;
+  description: string;
+  status: "matched" | "unmatched";
+  match: { id: string; status: string; origin: string; resourceType: string; resourceId: string } | null;
+};
+
+export async function importOfx(bankAccountId: string, ofx: string, fileName?: string) {
+  const res = await apiClient.post<{ data: ReconImportResult }>(
+    "/api/reconciliation/import",
+    { bankAccountId, ofx, fileName },
+    { correlationId: crypto.randomUUID() },
+  );
+  return res.data;
+}
+
+export async function fetchBankTransactions() {
+  const res = await apiClient.get<{ data: BankTxn[] }>("/api/reconciliation/transactions");
+  return res.data;
+}
+
+export async function rejectReconMatch(matchId: string) {
+  await apiClient.post(`/api/reconciliation/matches/${matchId}/reject`, {});
+}
+
+export async function createReconManualMatch(bankTransactionId: string, resourceType: "payable" | "receivable", resourceId: string) {
+  await apiClient.post("/api/reconciliation/matches", { bankTransactionId, resourceType, resourceId });
+}

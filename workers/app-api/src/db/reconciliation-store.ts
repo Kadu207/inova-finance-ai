@@ -54,7 +54,17 @@ function withinWindow(dueDate: string, postedDate: string): boolean {
 
 // ---- in-memory (dev/test sem banco) ----
 type MemTxn = { id: string; tenantId: string; fitid: string; status: "unmatched" | "matched" } & ParsedTxn;
+type MemMatch = {
+  id: string;
+  tenantId: string;
+  bankTransactionId: string;
+  resourceType: "payable" | "receivable";
+  resourceId: string;
+  origin: "auto" | "ai" | "manual";
+  status: "suggested" | "confirmed" | "rejected";
+};
 const txnsMemory = new Map<string, MemTxn>();
+const matchesMemory = new Map<string, MemMatch>();
 const sessionsMemory = new Map<string, ImportResult & { tenantId: string; createdAt: string }>();
 
 async function importDb(
@@ -139,6 +149,7 @@ function importMemory(
     const key = `${tenantId}:${t.fitid}`;
     if (txnsMemory.has(key)) continue; // idempotente
     let status: "unmatched" | "matched" = "unmatched";
+    const txnId = crypto.randomUUID();
     const pool = t.type === "debit" ? payables : receivables;
     const found = [...pool.values()].find(
       (x) =>
@@ -151,8 +162,18 @@ function importMemory(
       found.status = "paid";
       status = "matched";
       matched++;
+      const matchId = crypto.randomUUID();
+      matchesMemory.set(matchId, {
+        id: matchId,
+        tenantId,
+        bankTransactionId: txnId,
+        resourceType: t.type === "debit" ? "payable" : "receivable",
+        resourceId: found.id,
+        origin: "auto",
+        status: "confirmed",
+      });
     }
-    txnsMemory.set(key, { id: crypto.randomUUID(), tenantId, status, ...t });
+    txnsMemory.set(key, { id: txnId, tenantId, status, ...t });
   }
   const total = input.txns.length;
   const sessionId = crypto.randomUUID();
@@ -174,28 +195,128 @@ export async function importStatement(
   return importMemory(tenantId, { bankAccountId: input.bankAccountId, fileName: input.fileName, txns });
 }
 
-/** Lista os lançamentos bancários do tenant (para revisão — base da US2). */
+function activeMatchView(m: MemMatch | { id: string; status: string; origin: string; resourceType: string; resourceId: string }) {
+  return { id: m.id, status: m.status, origin: m.origin, resourceType: m.resourceType, resourceId: m.resourceId };
+}
+
+/** Lista os lançamentos bancários do tenant, com o match ativo (não-rejeitado) — base da revisão (US2). */
 export async function listBankTransactions(db: PrismaClient | null, tenantId: string) {
   if (db) {
     return withTenantScope(db, tenantId, async (tx) => {
-      const rows = await tx.bankTransaction.findMany({ where: { tenantId }, orderBy: { postedAt: "desc" } });
-      return rows.map((r) => ({
-        id: r.id,
-        fitid: r.fitid,
-        amount: r.amount.toString(),
-        type: r.type,
-        postedAt: r.postedAt.toISOString().slice(0, 10),
-        description: r.description,
-        status: r.status,
-      }));
+      const rows = await tx.bankTransaction.findMany({ where: { tenantId }, orderBy: { postedAt: "desc" }, include: { matches: true } });
+      return rows.map((r) => {
+        const active = r.matches.find((m) => m.status !== "rejected");
+        return {
+          id: r.id,
+          fitid: r.fitid,
+          amount: r.amount.toString(),
+          type: r.type,
+          postedAt: r.postedAt.toISOString().slice(0, 10),
+          description: r.description,
+          status: r.status,
+          match: active ? activeMatchView(active) : null,
+        };
+      });
     });
   }
   return [...txnsMemory.values()]
     .filter((t) => t.tenantId === tenantId)
-    .map((t) => ({ id: t.id, fitid: t.fitid, amount: t.amount, type: t.type, postedAt: t.date, description: t.description, status: t.status }));
+    .map((t) => {
+      const active = [...matchesMemory.values()].find((m) => m.bankTransactionId === t.id && m.status !== "rejected");
+      return { id: t.id, fitid: t.fitid, amount: t.amount, type: t.type, postedAt: t.date, description: t.description, status: t.status, match: active ? activeMatchView(active) : null };
+    });
+}
+
+// US2 — confirmar um match sugerido (baixa o título).
+export async function confirmMatch(db: PrismaClient | null, tenantId: string, matchId: string): Promise<{ id: string; status: string } | null> {
+  if (db) {
+    return withTenantScope(db, tenantId, async (tx) => {
+      const m = await tx.reconciliationMatch.findFirst({ where: { id: matchId, tenantId } });
+      if (!m) return null;
+      if (m.status === "suggested") {
+        if (m.resourceType === "payable") await tx.payable.updateMany({ where: { id: m.resourceId, tenantId }, data: { status: "paid" } });
+        else if (m.resourceType === "receivable") await tx.receivable.updateMany({ where: { id: m.resourceId, tenantId }, data: { status: "paid" } });
+        await tx.bankTransaction.update({ where: { id: m.bankTransactionId }, data: { status: "matched" } });
+        await tx.reconciliationMatch.update({ where: { id: m.id }, data: { status: "confirmed" } });
+      }
+      return { id: m.id, status: "confirmed" };
+    });
+  }
+  const m = matchesMemory.get(matchId);
+  if (!m || m.tenantId !== tenantId) return null;
+  if (m.status === "suggested") {
+    const { payables, receivables } = __memoryStoresForTests();
+    const pool = m.resourceType === "payable" ? payables : receivables;
+    for (const x of pool.values()) if (x.id === m.resourceId) x.status = "paid";
+    for (const t of txnsMemory.values()) if (t.id === m.bankTransactionId) t.status = "matched";
+    m.status = "confirmed";
+  }
+  return { id: m.id, status: "confirmed" };
+}
+
+// US2 — rejeitar/desfazer um match (estorna o título para "open", lançamento volta a "unmatched").
+export async function rejectMatch(db: PrismaClient | null, tenantId: string, matchId: string): Promise<{ id: string; status: string } | null> {
+  if (db) {
+    return withTenantScope(db, tenantId, async (tx) => {
+      const m = await tx.reconciliationMatch.findFirst({ where: { id: matchId, tenantId } });
+      if (!m || m.status === "rejected") return null;
+      if (m.resourceType === "payable") await tx.payable.updateMany({ where: { id: m.resourceId, tenantId }, data: { status: "open" } });
+      else if (m.resourceType === "receivable") await tx.receivable.updateMany({ where: { id: m.resourceId, tenantId }, data: { status: "open" } });
+      await tx.bankTransaction.update({ where: { id: m.bankTransactionId }, data: { status: "unmatched" } });
+      await tx.reconciliationMatch.update({ where: { id: m.id }, data: { status: "rejected" } });
+      return { id: m.id, status: "rejected" };
+    });
+  }
+  const m = matchesMemory.get(matchId);
+  if (!m || m.tenantId !== tenantId || m.status === "rejected") return null;
+  const { payables, receivables } = __memoryStoresForTests();
+  const pool = m.resourceType === "payable" ? payables : receivables;
+  for (const x of pool.values()) if (x.id === m.resourceId && x.tenantId === tenantId) x.status = "open";
+  for (const t of txnsMemory.values()) if (t.id === m.bankTransactionId) t.status = "unmatched";
+  m.status = "rejected";
+  return { id: m.id, status: "rejected" };
+}
+
+// US2 — casar manualmente um lançamento não conciliado com um título aberto.
+export async function createManualMatch(
+  db: PrismaClient | null,
+  tenantId: string,
+  input: { bankTransactionId: string; resourceType: "payable" | "receivable"; resourceId: string },
+): Promise<{ id: string } | null> {
+  if (db) {
+    return withTenantScope(db, tenantId, async (tx) => {
+      const bt = await tx.bankTransaction.findFirst({ where: { id: input.bankTransactionId, tenantId } });
+      if (!bt) return null;
+      if (input.resourceType === "payable") {
+        const p = await tx.payable.findFirst({ where: { id: input.resourceId, tenantId, status: "open" } });
+        if (!p) return null;
+        await tx.payable.update({ where: { id: p.id }, data: { status: "paid" } });
+      } else {
+        const r = await tx.receivable.findFirst({ where: { id: input.resourceId, tenantId, status: "open" } });
+        if (!r) return null;
+        await tx.receivable.update({ where: { id: r.id }, data: { status: "paid" } });
+      }
+      await tx.bankTransaction.update({ where: { id: bt.id }, data: { status: "matched" } });
+      const m = await tx.reconciliationMatch.create({
+        data: { tenantId, bankTransactionId: bt.id, resourceType: input.resourceType, resourceId: input.resourceId, origin: "manual", status: "confirmed" } as Prisma.ReconciliationMatchUncheckedCreateInput,
+      });
+      return { id: m.id };
+    });
+  }
+  const bt = [...txnsMemory.values()].find((t) => t.id === input.bankTransactionId && t.tenantId === tenantId);
+  if (!bt) return null;
+  const { payables, receivables } = __memoryStoresForTests();
+  const pool = input.resourceType === "payable" ? payables : receivables;
+  const res = [...pool.values()].find((x) => x.id === input.resourceId && x.tenantId === tenantId && x.status === "open");
+  if (!res) return null;
+  res.status = "paid";
+  bt.status = "matched";
+  const id = crypto.randomUUID();
+  matchesMemory.set(id, { id, tenantId, bankTransactionId: bt.id, resourceType: input.resourceType, resourceId: input.resourceId, origin: "manual", status: "confirmed" });
+  return { id };
 }
 
 /** @internal test hook */
 export function __reconciliationMemoryForTests() {
-  return { txnsMemory, sessionsMemory };
+  return { txnsMemory, matchesMemory, sessionsMemory };
 }
