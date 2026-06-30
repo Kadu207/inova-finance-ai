@@ -145,11 +145,16 @@ jobs:
           pnpm db:generate
           pnpm --filter @inova/app-api test:coverage
           sed -i 's#^SF:#SF:workers/app-api/#' workers/app-api/coverage/lcov.info
-      # Bloqueante: com o "Automatic Analysis" desligado no projeto Kadu207_inova-finance-ai,
-      # o scan via CI roda limpo. Se o scan falhar, o job falha.
+      # Bloqueante de QUALIDADE: qualitygate.wait=true faz o scanner esperar o Quality Gate
+      # e SAIR COM ERRO se ele reprovar — então o job sonarcloud (check obrigatório) reflete
+      # o gate, não só "o scan rodou". O log do scanner imprime as condições que falharem.
+      # (NÃO exigir o check "SonarCloud Code Analysis": é o da Automatic Analysis, que está
+      # desligada e fica sempre "cancelled". Ver docs/SONARCLOUD.md.)
       - name: SonarCloud Scan
         if: ${{ env.SONAR_TOKEN != '' }}
         uses: SonarSource/sonarqube-scan-action@v5
+        with:
+          args: -Dsonar.qualitygate.wait=true
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io

@@ -44,16 +44,29 @@ Analysis. O job é *gated*: sem o segredo `SONAR_TOKEN` ele só avisa e fica **v
 - Abra um PR (ou faça um push) — o job **`sonarcloud`** roda o scan e publica o resultado no PR.
 - Sem `SONAR_TOKEN`, o job fica **verde** com um aviso (não quebra o CI).
 
-### 6) Depois que o gate ficar verde (tornar bloqueante)
-Quando o job `sonarcloud` rodar limpo em 1–2 PRs, dá para deixar o Sonar bloquear merge:
-1. Remover o `continue-on-error` do step "SonarCloud Scan" em [`ci.yml`](../.github/workflows/ci.yml).
-2. Adicionar os checks à branch protection da `main`:
-   ```bash
-   gh api -X POST repos/Kadu207/inova-finance-ai/branches/main/protection/required_status_checks/contexts \
-     --input - <<'JSON'
-   ["sonarcloud", "SonarCloud Code Analysis"]
-   JSON
-   ```
+### 6) Tornar o Sonar bloqueante — DO JEITO CERTO
+> ⚠️ **NÃO exija o check `SonarCloud Code Analysis`.** Esse é o check da **Automatic
+> Analysis**. Como usamos CI-based (Automatic OFF), ele fica **`cancelled` para sempre** —
+> exigi-lo trava TODO PR (foi o erro que cometemos). O sinal real do Sonar é o **job `sonarcloud`**.
+
+Para o job `sonarcloud` refletir o **Quality Gate** (e não só "o scan rodou"), o scan usa
+`-Dsonar.qualitygate.wait=true` (ver [`ci.yml`](../.github/workflows/ci.yml)) — assim o
+scanner espera o gate e SAI COM ERRO se reprovar, e o log imprime as condições que falharam.
+
+Exigir só o `sonarcloud` na branch protection da `main`:
+```bash
+gh api -X POST repos/Kadu207/inova-finance-ai/branches/main/protection/required_status_checks/contexts \
+  --input - <<'JSON'
+["sonarcloud"]
+JSON
+```
+Para REMOVER o check morto da Automatic Analysis, se um dia for adicionado por engano:
+```bash
+gh api -X DELETE repos/Kadu207/inova-finance-ai/branches/main/protection/required_status_checks/contexts \
+  --input - <<'JSON'
+["SonarCloud Code Analysis"]
+JSON
+```
 
 ## Troubleshooting
 
@@ -61,6 +74,13 @@ Quando o job `sonarcloud` rodar limpo em 1–2 PRs, dá para deixar o Sonar bloq
 Automatic Analysis ainda está LIGADO no projeto que o CI alimenta. 99% das vezes é o erro
 de **projeto errado** (ver o aviso do passo 3): você desligou em `saas-acme-erp-financeiro`,
 mas o CI usa `Kadu207_inova-finance-ai`. Desligue no projeto cuja Key == `sonar.projectKey`.
+
+**Check `SonarCloud Code Analysis` fica `cancelled` / "The last analysis has failed", mas o
+job `sonarcloud` passa** — comportamento ESPERADO quando a Automatic Analysis está OFF: aquele
+check é o da Automatic Analysis e não roda mais. **Não é erro e não deve ser obrigatório.**
+Confie no job `sonarcloud` (com `qualitygate.wait`). Em Background Tasks, os "Failed" antigos
+eram o conflito Automatic×CI enquanto as duas estavam ativas; com a Automatic OFF, as análises
+do CI passam a dar Success.
 
 **Por que isto pode travar TODOS os merges** — se os checks `sonarcloud` /
 `SonarCloud Code Analysis` forem obrigatórios na `main` (passo 6) enquanto o scan falha,
