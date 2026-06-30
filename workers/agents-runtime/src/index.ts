@@ -1,31 +1,22 @@
+import {
+  BUSINESS_AGENTS,
+  type BusinessAgentId,
+  agentTools,
+  buildAgentReply,
+  fetchTenantFacts,
+} from "./agents";
+
+export { BUSINESS_AGENTS, type BusinessAgentId } from "./agents";
+
 export interface Env {
   ENVIRONMENT: string;
-  OPENROUTER_API_KEY: string;
+  /** Opcional — habilita o LLM (OpenRouter). Sem ela, respostas determinísticas. */
+  OPENROUTER_API_KEY?: string;
   MESSAGING: Fetcher;
+  /** Service binding para o app-api: grounding com dados reais do tenant. */
+  APP_API?: Fetcher;
   AGENT: DurableObjectNamespace;
 }
-
-export const BUSINESS_AGENTS = [
-  "ceo", "cfo", "financeiro", "cobranca", "compras", "fiscal",
-  "estoque", "comercial", "juridico", "contratos", "auditor", "suporte",
-] as const;
-
-export type BusinessAgentId = (typeof BUSINESS_AGENTS)[number];
-
-const AGENT_TOOLS: Record<BusinessAgentId, string[]> = {
-  ceo: ["reports:read", "agents:invoke"],
-  cfo: ["finance:read", "finance:write", "reports:read"],
-  financeiro: ["finance:read", "finance:write"],
-  cobranca: ["finance:read", "integrations:n8n"],
-  compras: ["finance:read", "inventory:read"],
-  fiscal: ["fiscal:read", "ocr:read"],
-  estoque: ["inventory:read", "inventory:write"],
-  comercial: ["crm:read", "finance:read"],
-  juridico: ["contracts:read"],
-  contratos: ["contracts:read", "contracts:write"],
-  auditor: ["audit:read", "finance:read"],
-  suporte: ["support:read", "integrations:chatwoot"],
-};
 
 interface AgentState {
   agentId: BusinessAgentId;
@@ -35,10 +26,12 @@ interface AgentState {
 
 export class InovaBusinessAgent {
   private state: DurableObjectState;
+  private env: Env;
   private agentState: AgentState = { agentId: "suporte", tenantId: "", messages: [] };
 
-  constructor(state: DurableObjectState) {
+  constructor(state: DurableObjectState, env: Env) {
     this.state = state;
+    this.env = env;
     this.state.blockConcurrencyWhile(async () => {
       this.agentState = (await this.state.storage.get<AgentState>("agent")) ?? this.agentState;
     });
@@ -60,14 +53,26 @@ export class InovaBusinessAgent {
     this.agentState.tenantId = tenantId;
 
     if (request.method === "GET" && url.pathname === "/tools") {
-      return Response.json({ agentId, tools: AGENT_TOOLS[agentId] });
+      return Response.json({ agentId, tools: agentTools(agentId) });
     }
 
     if (request.method === "POST" && url.pathname === "/chat") {
       const body = await request.json<{ message: string; role?: string }>();
       const entry = { role: body.role ?? "user", content: body.message, at: new Date().toISOString() };
       this.agentState.messages.push(entry);
-      const reply = `[${agentId}] Processando no tenant ${tenantId}: ${body.message.slice(0, 200)}`;
+
+      // Grounding: dados reais do tenant via app-api, encaminhando o token do usuário.
+      const token = request.headers.get("Authorization")?.replace("Bearer ", "") ?? null;
+      const facts = await fetchTenantFacts(this.env.APP_API, token, tenantId, agentId);
+
+      const { reply, source } = await buildAgentReply({
+        agentId,
+        tenantId,
+        message: body.message,
+        facts,
+        apiKey: this.env.OPENROUTER_API_KEY,
+      });
+
       this.agentState.messages.push({ role: "assistant", content: reply, at: new Date().toISOString() });
       await this.state.storage.put("agent", this.agentState);
 
@@ -75,7 +80,8 @@ export class InovaBusinessAgent {
         agentId,
         tenantId,
         reply,
-        toolsAvailable: AGENT_TOOLS[agentId],
+        source,
+        toolsAvailable: agentTools(agentId),
         correlationId: request.headers.get("X-Correlation-Id") ?? crypto.randomUUID(),
       });
     }

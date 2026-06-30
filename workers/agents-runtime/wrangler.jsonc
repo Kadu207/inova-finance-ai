@@ -10,7 +10,10 @@
     "bindings": [{ "name": "AGENT", "class_name": "InovaBusinessAgent" }]
   },
   "migrations": [{ "tag": "v1", "new_classes": ["InovaBusinessAgent"] }],
-  "services": [{ "binding": "MESSAGING", "service": "inova-messaging" }],
+  "services": [
+    { "binding": "MESSAGING", "service": "inova-messaging" },
+    { "binding": "APP_API", "service": "inova-app-api" }
+  ],
   "ai": { "binding": "AI" },
   "env": {
     "staging": { "name": "inova-agents-staging" },
