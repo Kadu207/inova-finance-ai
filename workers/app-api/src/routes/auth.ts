@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Env } from "../types";
+import type { Env, AuthUser } from "../types";
 import { signJwt, verifyJwt, verifyPassword, hashPassword } from "../auth";
 import { generateTotpSecret, buildTotpUri, verifyTotp } from "../mfa";
 import { requireMfaForRole } from "../rbac";
@@ -12,6 +12,13 @@ import { issueRefreshToken, consumeRefreshToken, revokeRefreshToken } from "../r
 // /refresh). Com o refresh (7 dias) + revogação no lugar, encurtar para ~15 min é um passo
 // seguro quando o frontend adotar o /refresh.
 const ACCESS_TOKEN_TTL_SEC = 60 * 60;
+
+/** Emite o par access (JWT) + refresh (KV) de uma sessão. Usado no login e no /refresh. */
+async function issueSession(env: Env, user: AuthUser): Promise<{ token: string; refreshToken: string }> {
+  const token = await signJwt(user, env.JWT_SECRET, ACCESS_TOKEN_TTL_SEC);
+  const refreshToken = await issueRefreshToken(env.SESSIONS, user);
+  return { token, refreshToken };
+}
 
 export const authRoutes = new Hono<{ Bindings: Env }>();
 
@@ -87,15 +94,13 @@ authRoutes.post("/login", async (c) => {
     return c.json({ mfaEnrollmentRequired: true, enrollmentToken, role: userRecord.role });
   }
 
-  const sessionUser = {
+  const { token, refreshToken } = await issueSession(c.env, {
     userId: userRecord.userId,
     email: userRecord.email,
     tenantId: userRecord.tenantId,
     role: userRecord.role,
     branchIds: userRecord.branchIds,
-  };
-  const token = await signJwt(sessionUser, c.env.JWT_SECRET, ACCESS_TOKEN_TTL_SEC);
-  const refreshToken = await issueRefreshToken(c.env.SESSIONS, sessionUser);
+  });
 
   return c.json({ token, refreshToken, role: userRecord.role });
 });
@@ -109,15 +114,13 @@ authRoutes.post("/refresh", async (c) => {
   const rec = await consumeRefreshToken(c.env.SESSIONS, refreshToken);
   if (!rec) return c.json({ error: "Refresh token inválido ou expirado" }, 401);
 
-  const sessionUser = {
+  const { token, refreshToken: newRefreshToken } = await issueSession(c.env, {
     userId: rec.userId,
     email: rec.email,
     tenantId: rec.tenantId,
     role: rec.role,
     branchIds: rec.branchIds,
-  };
-  const token = await signJwt(sessionUser, c.env.JWT_SECRET, ACCESS_TOKEN_TTL_SEC);
-  const newRefreshToken = await issueRefreshToken(c.env.SESSIONS, sessionUser);
+  });
 
   return c.json({ token, refreshToken: newRefreshToken, role: rec.role });
 });
