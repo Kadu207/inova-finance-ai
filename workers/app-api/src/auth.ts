@@ -31,6 +31,17 @@ function base64UrlDecodeToString(input: string): string {
   return decoder.decode(base64UrlDecodeToBytes(input));
 }
 
+/** Token opaco aleatório (URL-safe), usado como refresh token — NÃO é um JWT. */
+export function generateOpaqueToken(bytes = 32): string {
+  return base64UrlEncode(crypto.getRandomValues(new Uint8Array(bytes)));
+}
+
+/** SHA-256 em hex. Guardamos o HASH do refresh token no KV (nunca o token cru). */
+export async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(input));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);

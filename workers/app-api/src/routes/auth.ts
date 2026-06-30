@@ -1,11 +1,24 @@
 import { Hono } from "hono";
-import type { Env } from "../types";
+import type { Env, AuthUser } from "../types";
 import { signJwt, verifyJwt, verifyPassword, hashPassword } from "../auth";
 import { generateTotpSecret, buildTotpUri, verifyTotp } from "../mfa";
 import { requireMfaForRole } from "../rbac";
 import { enableMfaForUser, verifyDbCredentials } from "../db/auth-store";
 import { getDb, resolveConnectionString } from "../db/client";
 import { DEMO_ADMIN_EMAIL } from "../db/seed";
+import { issueRefreshToken, consumeRefreshToken, revokeRefreshToken } from "../refresh-tokens";
+
+// Access token mantido em 1h para não regredir a UX atual (o frontend ainda não consome
+// /refresh). Com o refresh (7 dias) + revogação no lugar, encurtar para ~15 min é um passo
+// seguro quando o frontend adotar o /refresh.
+const ACCESS_TOKEN_TTL_SEC = 60 * 60;
+
+/** Emite o par access (JWT) + refresh (KV) de uma sessão. Usado no login e no /refresh. */
+async function issueSession(env: Env, user: AuthUser): Promise<{ token: string; refreshToken: string }> {
+  const token = await signJwt(user, env.JWT_SECRET, ACCESS_TOKEN_TTL_SEC);
+  const refreshToken = await issueRefreshToken(env.SESSIONS, user);
+  return { token, refreshToken };
+}
 
 export const authRoutes = new Hono<{ Bindings: Env }>();
 
@@ -81,18 +94,42 @@ authRoutes.post("/login", async (c) => {
     return c.json({ mfaEnrollmentRequired: true, enrollmentToken, role: userRecord.role });
   }
 
-  const token = await signJwt(
-    {
-      userId: userRecord.userId,
-      email: userRecord.email,
-      tenantId: userRecord.tenantId,
-      role: userRecord.role,
-      branchIds: userRecord.branchIds,
-    },
-    c.env.JWT_SECRET,
-  );
+  const { token, refreshToken } = await issueSession(c.env, {
+    userId: userRecord.userId,
+    email: userRecord.email,
+    tenantId: userRecord.tenantId,
+    role: userRecord.role,
+    branchIds: userRecord.branchIds,
+  });
 
-  return c.json({ token, role: userRecord.role });
+  return c.json({ token, refreshToken, role: userRecord.role });
+});
+
+// Troca um refresh token válido por um novo access token + novo refresh (rotação). O
+// refresh é de uso único: o anterior é invalidado, barrando replay.
+authRoutes.post("/refresh", async (c) => {
+  const { refreshToken } = await c.req.json<{ refreshToken?: string }>().catch(() => ({}) as { refreshToken?: string });
+  if (!refreshToken) return c.json({ error: "refreshToken obrigatório" }, 400);
+
+  const rec = await consumeRefreshToken(c.env.SESSIONS, refreshToken);
+  if (!rec) return c.json({ error: "Refresh token inválido ou expirado" }, 401);
+
+  const { token, refreshToken: newRefreshToken } = await issueSession(c.env, {
+    userId: rec.userId,
+    email: rec.email,
+    tenantId: rec.tenantId,
+    role: rec.role,
+    branchIds: rec.branchIds,
+  });
+
+  return c.json({ token, refreshToken: newRefreshToken, role: rec.role });
+});
+
+// Logout: revoga o refresh token apresentado (a sessão deixa de renovar). Idempotente.
+authRoutes.post("/logout", async (c) => {
+  const { refreshToken } = await c.req.json<{ refreshToken?: string }>().catch(() => ({}) as { refreshToken?: string });
+  if (refreshToken) await revokeRefreshToken(c.env.SESSIONS, refreshToken);
+  return c.json({ ok: true });
 });
 
 authRoutes.post("/mfa/setup", async (c) => {
