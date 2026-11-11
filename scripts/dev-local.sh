@@ -37,7 +37,7 @@ ensure_node() {
       eval "$("$FNM_DIR/fnm" env --shell bash)"
     fi
   fi
-  command -v pnpm >/dev/null 2>&1 || { echo "Erro: pnpm não encontrado. Ative Node 20 + corepack." >&2; exit 1; }
+  command -v pnpm >/dev/null 2>&1 || { echo "Erro: pnpm não encontrado. Rode via corepack ('corepack enable && corepack prepare pnpm@12.18.0 --activate') ou, no Node 20, instale o pnpm direto ('npm i -g pnpm@12.18.0')." >&2; exit 1; }
 }
 
 port_in_use() {
